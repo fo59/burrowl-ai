@@ -1,0 +1,7 @@
+*.log 
+.env
+#macOS
+.DS_Store
+node_modules/
+Ekran Resmi*
+*.pdf
