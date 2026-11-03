@@ -25,19 +25,20 @@ console.log(removeEmails('a@x.com ve b@y.com ikisine de yaz'))
 console.log(removeEmails('bunda e-posta yok'))
 
 
-
-const phonePattern = /(\+90|0)?[\s-]?(5\d{2})[\s-]?(\d{3})[\s-]?(\d{2})[\s-]?(\d{2})/g
+const phonePattern = /((\+90|0)[\s-]?)?(5\d{2})[\s-]?(\d{3})[\s-]?(\d{2})[\s-]?(\d{2})/g
 
 export function removePhones(text:string):string {
     return text.replace(phonePattern, '[phone number removed]')
 }
 
-console.log('--- telefon ---')
-console.log(removePhones('beni 0532 123 45 67 numarasindan ara'))
-console.log(removePhones('numaram 05321234567'))
-console.log(removePhones('+90 532 123 45 67 kimin numarasi'))
-console.log(removePhones('0532-123-45-67 kayitli mi'))
-console.log(removePhones('2026 yili fiyatlari'))
-console.log(removePhones('iphone 15 fiyati 50000 TL'))
-console.log(removePhones('ara 532 123 45 67'))
+const tcPattern = /\b[1-9]\d{10}\b/g
 
+export function removeTcNumber(text:string):string {
+    return text.replace(tcPattern, '[TC number removed]')
+}
+
+console.log(removeTcNumber('12345678901'))
+console.log(removeTcNumber('1234567890'))
+console.log(removeTcNumber('123456789012'))
+console.log(removeTcNumber('1234567890a'))
+console.log(removeTcNumber('02345678900'))
