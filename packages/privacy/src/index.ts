@@ -39,3 +39,5 @@ console.log(removePhones('+90 532 123 45 67 kimin numarasi'))
 console.log(removePhones('0532-123-45-67 kayitli mi'))
 console.log(removePhones('2026 yili fiyatlari'))
 console.log(removePhones('iphone 15 fiyati 50000 TL'))
+console.log(removePhones('ara 532 123 45 67'))
+
