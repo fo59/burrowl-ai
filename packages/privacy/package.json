@@ -1,9 +1,9 @@
 {
   "name": "@burrowl/privacy",
   "version": "0.0.1",
-  "description": "Removes personal data from search queries before they leave the device\n  Strips phone numbers, emails, ID numbers and IBANs from search queries\n  Filters personal information out of web search queries",
+  "description": "Removes personal data from search queries before they leave the device",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "tsc && node --test dist/*.test.js"
   },
   "keywords": [],
   "author": "",
