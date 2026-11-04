@@ -20,3 +20,9 @@ const tcPattern = /\b[1-9]\d{10}\b/g
 export function removeTcNumber(text:string):string {
     return text.replace(tcPattern, '[TC number removed]')
 }
+
+const ibanPattern = /(\bTR)\d{2}(\s?\d{4}){5}\s?\d{2}\b/gi
+
+export function removeIbans(text:string):string {
+    return text.replace(ibanPattern,'[IBAN removed]')
+}

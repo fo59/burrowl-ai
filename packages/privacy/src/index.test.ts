@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
-import { removeTcNumber, removePhones, hasEmail, removeEmails } from './index.js'
+import { removeTcNumber, removePhones, hasEmail, removeEmails,removeIbans } from './index.js'
 describe('removeTcNumber', () => {
 
   test('removes a TC number inside a sentence', () => {
@@ -154,4 +154,37 @@ describe('removeEmails', () => {
   })
 })
 
+describe('removeIbans', ()  => {
+  test('removes a compact IBAN', () => {
+    assert.equal(
+    removeIbans('iban TR120006100519786457841326 kime ait'),
+      'iban [IBAN removed] kime ait'
+    )
 
+  })
+  test('removes a spaced IBAN', () => {
+    assert.equal(
+      removeIbans('TR12 0006 1005 1978 6457 8413 26 hesabina'),
+      '[IBAN removed] hesabina'
+    )
+  })
+  test('removes a lowercase IBAN', () => {
+    assert.equal(
+      removeIbans('tr120006100519786457841326'),
+      '[IBAN removed]'
+    )
+  })
+    test('keeps a too short IBAN unchanged', () => {
+    assert.equal(
+      removeIbans('TR1200061005'),
+      'TR1200061005'
+    )
+  })
+  test('keeps a too long number unchanged', () => {
+  assert.equal(
+    removeIbans('TR1200061005197864578413261'),
+    'TR1200061005197864578413261'
+  )
+})
+
+})
