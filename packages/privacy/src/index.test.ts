@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
-import { removeTcNumber, removePhones, hasEmail, removeEmails,removeIbans } from './index.js'
+import { removeTcNumber, removePhones, hasEmail, removeEmails,removeIbans,sanitizeQuery} from './index.js'
 describe('removeTcNumber', () => {
 
   test('removes a TC number inside a sentence', () => {
@@ -160,7 +160,6 @@ describe('removeIbans', ()  => {
     removeIbans('iban TR120006100519786457841326 kime ait'),
       'iban [IBAN removed] kime ait'
     )
-
   })
   test('removes a spaced IBAN', () => {
     assert.equal(
@@ -184,7 +183,33 @@ describe('removeIbans', ()  => {
   assert.equal(
     removeIbans('TR1200061005197864578413261'),
     'TR1200061005197864578413261'
-  )
+    )
+  })
 })
 
+describe('sanitizeQuery',() =>{
+  test('returns the text unchanged when there is nothing personal', () => {
+    assert.deepEqual(
+      sanitizeQuery('en iyi telefon 5000 TL 2026'),
+      { text: 'en iyi telefon 5000 TL 2026', removed: [] }
+    )
+  })
+  test('removes an email and a phone together', () => {
+    assert.deepEqual(
+      sanitizeQuery('ali@gmail.com ve 0532 123 45 67 kimin'),
+      { text: '[email removed] ve [phone number removed] kimin', removed: ['email', 'phone'] }
+    )
+    })
+  test('removes a spaced IBAN without touching it as a phone', () =>{
+    assert.deepEqual(
+      sanitizeQuery('TR12 0006 1005 1978 6457 8413 26'),
+      { text: '[IBAN removed]', removed: ['iban'] }
+    )
+  })
+  test('removes a compact IBAN before the phone filter can break it', () => {
+    assert.deepEqual(
+      sanitizeQuery('TR120006100519786457841326'),
+      { text: '[IBAN removed]', removed: ['iban'] }
+    )
+  })
 })

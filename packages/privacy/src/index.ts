@@ -26,3 +26,38 @@ const ibanPattern = /(\bTR)\d{2}(\s?\d{4}){5}\s?\d{2}\b/gi
 export function removeIbans(text:string):string {
     return text.replace(ibanPattern,'[IBAN removed]')
 }
+export interface SanitizeResult{
+    text: string
+    removed: string[]
+}
+
+export function sanitizeQuery(text: string): SanitizeResult {
+    const removed: string[] = []
+    let result = text
+
+    const withoutEmails = removeEmails(result)
+    if (withoutEmails !== result){
+        removed.push('email')
+    }
+    result = withoutEmails
+
+    const withoutIban = removeIbans(result)
+        if(withoutIban !== result){
+            removed.push('iban')
+        }
+    result = withoutIban
+
+    const withoutPhoneNumbers = removePhones(result)
+        if (withoutPhoneNumbers !== result) {
+            removed.push('phone')
+    }
+    result = withoutPhoneNumbers
+    
+    const withoutTc = removeTcNumber(result)
+        if(withoutTc !== result){
+            removed.push('tc')
+        }
+    result = withoutTc
+    
+    return{text: result, removed:removed}
+}
