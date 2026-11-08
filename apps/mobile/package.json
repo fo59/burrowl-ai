@@ -5,6 +5,7 @@
   "license": "AGPL-3.0-only",
   "dependencies": {
     "@burrowl/privacy": "*",
+    "@burrowl/assistant": "*",
     "@expo/metro-runtime": "~58.0.17",
     "expo": "~58.0.23",
     "expo-status-bar": "~58.0.4",

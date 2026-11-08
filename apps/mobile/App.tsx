@@ -2,12 +2,16 @@ import { useState } from 'react'
 import { StatusBar } from 'expo-status-bar';
 import { StyleSheet, Text, TextInput, View } from 'react-native';
 import { sanitizeQuery } from '@burrowl/privacy'
+import { needsSearch } from '@burrowl/assistant'
+import { colors } from './theme'
+
 
 
 
 export default function App() {
   const [soru, setSoru] = useState('')
   const sonuc = sanitizeQuery(soru)
+  const arama = needsSearch(soru)
 
 
   return (
@@ -19,6 +23,7 @@ export default function App() {
         value={soru}
         onChangeText={setSoru}
       />
+      {arama && <Text style={styles.badge}>🌐 Web araması gerekli</Text>}
       <StatusBar style="auto" />
       <Text style={styles.query}>Internete giden: {sonuc.text}</Text>
       <Text style={styles.label}>Cikarilanlar: {sonuc.removed.join(',')}</Text>
@@ -29,13 +34,13 @@ export default function App() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0F044C',
+    backgroundColor: colors.background,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 12,
   },
   title: {
-    color: '#EEEEEE',
+    color: colors.text,
     fontSize: 24,
     fontWeight: 'bold',
   },
@@ -43,16 +48,24 @@ const styles = StyleSheet.create({
     width: 300,
     padding: 12,
     borderWidth: 1,
-    borderColor: '#2A3480',
+    borderColor: colors.border,
     borderRadius: 12,
-    backgroundColor: '#141E61',
-    color: '#EEEEEE',
+    backgroundColor: colors.card,
+    color: colors.text,
   },
   query: {
-    color: '#E3A04F',
+    color: colors.internet,
     fontFamily: 'monospace',
   },
   label: {
-    color: '#A3A5B8',
+    color: colors.textMuted,
+  },
+  badge: {
+  color: colors.background,
+  backgroundColor: colors.internet,
+  paddingHorizontal: 12,
+  paddingVertical: 4,
+  borderRadius: 999,
+  fontWeight: 'bold',
   },
 });
