@@ -1,0 +1,14 @@
+{
+  "name": "@burrowl/assistant",
+  "version": "0.0.1",
+  "main": "src/index.ts",
+  "description": "Orchestrates the assistant: decides when to search, prepares the query and assembles the answer",
+  "scripts": {
+    "test": "tsc && node --test dist/*.test.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "private": true
+}
