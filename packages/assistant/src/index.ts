@@ -6,3 +6,9 @@ export function needsSearch(question: string): boolean{
     return yearPattern.test(question) || keywordPattern.test(question)
     
 }
+
+export interface Message{
+    id: number
+    role: 'user' | 'assistant'
+    text: string
+}

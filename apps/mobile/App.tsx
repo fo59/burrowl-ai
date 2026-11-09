@@ -4,6 +4,7 @@ import { StyleSheet, Text, TextInput, View } from 'react-native';
 import { sanitizeQuery } from '@burrowl/privacy'
 import { needsSearch } from '@burrowl/assistant'
 import { colors } from './theme'
+import { Message } from '@burrowl/assistant'
 
 
 
@@ -12,6 +13,12 @@ export default function App() {
   const [soru, setSoru] = useState('')
   const sonuc = sanitizeQuery(soru)
   const arama = needsSearch(soru)
+
+  const [messages, setMessages] = useState<Message[]>([
+    { id: 1, role: 'user', text: 'Merhaba!' },
+    { id: 2, role: 'assistant', text: 'Merhaba, nasıl yardımcı olabilirim?' },
+  ])
+
 
 
   return (
@@ -27,6 +34,11 @@ export default function App() {
       <StatusBar style="auto" />
       <Text style={styles.query}>Internete giden: {sonuc.text}</Text>
       <Text style={styles.label}>Cikarilanlar: {sonuc.removed.join(',')}</Text>
+
+      {messages.map((m) => (
+        <Text key={m.id} style={styles.message}>{m.role}: {m.text}</Text>
+      ))}
+      
     </View>
   );
 }
@@ -67,5 +79,8 @@ const styles = StyleSheet.create({
   paddingVertical: 4,
   borderRadius: 999,
   fontWeight: 'bold',
+  },
+  message: {
+    color: colors.text,
   },
 });
