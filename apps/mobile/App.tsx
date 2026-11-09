@@ -5,6 +5,7 @@ import { sanitizeQuery } from '@burrowl/privacy'
 import { needsSearch } from '@burrowl/assistant'
 import { colors } from './theme'
 import { Message } from '@burrowl/assistant'
+import { Pressable } from 'react-native';
 
 
 
@@ -18,6 +19,12 @@ export default function App() {
     { id: 1, role: 'user', text: 'Merhaba!' },
     { id: 2, role: 'assistant', text: 'Merhaba, nasıl yardımcı olabilirim?' },
   ])
+    function gonder() {
+    const yeni: Message = { id: Date.now(), role: 'user', text: soru }
+    setMessages([...messages, yeni])
+    setSoru('')
+  }
+
 
 
 
@@ -38,6 +45,10 @@ export default function App() {
       {messages.map((m) => (
         <Text key={m.id} style={styles.message}>{m.role}: {m.text}</Text>
       ))}
+      <Pressable onPress={gonder}>
+        <Text>Gönder</Text>
+      </Pressable>
+
       
     </View>
   );
@@ -83,4 +94,15 @@ const styles = StyleSheet.create({
   message: {
     color: colors.text,
   },
+    button: {
+    backgroundColor: colors.text,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 12,
+  },
+  buttonText: {
+    color: colors.background,
+    fontWeight: 'bold',
+  },
+
 });
