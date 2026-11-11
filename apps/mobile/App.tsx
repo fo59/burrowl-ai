@@ -1,12 +1,9 @@
 import { useState } from 'react'
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, TextInput, View } from 'react-native';
 import { sanitizeQuery } from '@burrowl/privacy'
-import { needsSearch } from '@burrowl/assistant'
 import { colors } from './theme'
-import { Message } from '@burrowl/assistant'
-import { Pressable } from 'react-native';
-
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
+import { needsSearch, Message } from '@burrowl/assistant'
 
 
 
@@ -14,22 +11,28 @@ export default function App() {
   const [soru, setSoru] = useState('')
   const sonuc = sanitizeQuery(soru)
   const arama = needsSearch(soru)
+  const bosMu = soru.trim() === ''
 
   const [messages, setMessages] = useState<Message[]>([
     { id: 1, role: 'user', text: 'Merhaba!' },
     { id: 2, role: 'assistant', text: 'Merhaba, nasıl yardımcı olabilirim?' },
   ])
-    function gonder() {
-    const yeni: Message = { id: Date.now(), role: 'user', text: soru }
-    setMessages([...messages, yeni])
+  function gonder() {
+    const cevap: Message = {
+      id: Date.now() + 1,
+      role: 'assistant',
+      text: arama
+        ? 'Bunun için internette arama yapmam gerekiyor. (yakında)'
+        : 'Bu soruyu cihazda cevaplayabilirim. (yakında)',
+    }
+    if (bosMu) return
+    const yeni: Message = { id: Date.now(), role: 'user', text: soru.trim() }
+    setMessages([...messages, yeni, cevap])
     setSoru('')
   }
 
-
-
-
   return (
-    
+
     <View style={styles.container}>
       <Text style={styles.title}>Burrowl AI'a hoş geldin!</Text>
 
@@ -43,13 +46,20 @@ export default function App() {
       <Text style={styles.label}>Cikarilanlar: {sonuc.removed.join(',')}</Text>
 
       {messages.map((m) => (
-        <Text key={m.id} style={styles.message}>{m.role}: {m.text}</Text>
+        <Text
+          key={m.id}
+          style={[styles.bubble, m.role === 'user' ? styles.userBubble : styles.assistantBubble]}
+        >
+          {m.text}
+        </Text>
       ))}
-      <Pressable onPress={gonder}>
+
+      <Pressable style={[styles.button, bosMu && styles.buttonDisabled]}
+        onPress={gonder} disabled={bosMu}>
         <Text>Gönder</Text>
       </Pressable>
 
-      
+
     </View>
   );
 }
@@ -84,17 +94,17 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
   },
   badge: {
-  color: colors.background,
-  backgroundColor: colors.internet,
-  paddingHorizontal: 12,
-  paddingVertical: 4,
-  borderRadius: 999,
-  fontWeight: 'bold',
+    color: colors.background,
+    backgroundColor: colors.internet,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 999,
+    fontWeight: 'bold',
   },
   message: {
     color: colors.text,
   },
-    button: {
+  button: {
     backgroundColor: colors.text,
     paddingHorizontal: 20,
     paddingVertical: 10,
@@ -104,5 +114,24 @@ const styles = StyleSheet.create({
     color: colors.background,
     fontWeight: 'bold',
   },
+  buttonDisabled: {
+    opacity: 0.4,
+  },
+  bubble: {
+    maxWidth: 280,
+    padding: 12,
+    borderRadius: 16,
+  },
+  userBubble: {
+    alignSelf: 'flex-end',
+    backgroundColor: colors.text,
+    color: colors.background,
+  },
+  assistantBubble: {
+    alignSelf: 'flex-start',
+    backgroundColor: colors.card,
+    color: colors.text,
+  },
+
 
 });
