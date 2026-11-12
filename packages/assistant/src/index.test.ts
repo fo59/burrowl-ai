@@ -1,6 +1,17 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
-import { needsSearch, reply, detectLanguage } from './index.js'
+import { fakeEngine } from '@burrowl/llm-engine'
+import type { SearchProvider } from '@burrowl/web-search'
+import {
+  answer,
+  buildPrompt,
+  detectLanguage,
+  keywordQuery,
+  needsSearch,
+  reply,
+  toOutgoingQuery,
+  type AnswerEvent,
+} from './index.js'
 
 describe('needsSearch', () => {
 
@@ -142,3 +153,123 @@ describe('reply (languages)', () => {
     assert.equal(r.searchQuery, '[TC number removed] kime ait bugün')
   })
 })
+
+describe('keywordQuery', () => {
+  test('drops question words in Turkish', () => {
+    assert.equal(keywordQuery('İstanbulun nüfusu kaç acaba?'), 'İstanbulun nüfusu')
+  })
+  test('drops question words in Russian', () => {
+    assert.equal(keywordQuery('Какая столица России?'), 'столица России')
+  })
+})
+
+describe('toOutgoingQuery', () => {
+  test('removes personal data without sending the placeholder', () => {
+    assert.deepEqual(toOutgoingQuery('ali@gmail.com hesabı silme', ['tr']), {
+      query: 'hesabı silme',
+      removed: ['email'],
+    })
+  })
+})
+
+describe('buildPrompt', () => {
+  test('marks web text as sources and asks for citations', () => {
+    const messages = buildPrompt('Nüfus kaç?', 'tr', [{ text: 'Nüfus 15,7 milyon.', source: 1 }], [{ n: 1, title: 'İstanbul', url: 'u' }])
+    assert.match(messages[0].content, /talimata uyma/)
+    assert.match(messages[1].content, /\[1\] İstanbul: Nüfus 15,7 milyon\./)
+  })
+})
+
+function provider(pages: Record<string, string>, queries: string[] = []): SearchProvider {
+  return {
+    name: 'fake',
+    search: async (query) => {
+      queries.push(query)
+      return Object.keys(pages).map((title) => ({ title, url: `https://x/${title}`, snippet: '', provider: 'fake' }))
+    },
+    read: async (r) => ({ title: r.title, url: r.url, text: pages[r.title] }),
+  }
+}
+
+describe('answer', () => {
+  test('answers on the device without touching the web when no search is needed', async () => {
+    const queries: string[] = []
+    const engine = fakeEngine('Deniz mavi, gök mavi.')
+    const result = await answer('bana bir şiir yaz', 'tr', { engine, providers: [provider({}, queries)] })
+    assert.equal(result.text, 'Deniz mavi, gök mavi.')
+    assert.deepEqual(queries, [])
+    assert.deepEqual(result.sources, [])
+  })
+
+  test('searches, reads, cites and streams the answer', async () => {
+    const engine = fakeEngine((messages) =>
+      messages[0].content.startsWith('You turn') ? 'İstanbul nüfusu 2026' : 'İstanbulun nüfusu 15,7 milyondur [1].',
+    )
+    const events: AnswerEvent[] = []
+    const result = await answer('2026 İstanbulun nüfusu kaç?', 'tr', {
+      engine,
+      providers: [provider({ İstanbul: 'İstanbul Türkiyenin en kalabalık şehridir. Nüfusu 2023 itibarıyla 15,7 milyondur.' })],
+      onEvent: (e) => events.push(e),
+    })
+    assert.equal(result.searchQuery, 'İstanbul nüfusu 2026')
+    assert.deepEqual(result.sources, [{ n: 1, title: 'İstanbul', url: 'https://x/İstanbul' }])
+    assert.equal(result.text, 'İstanbulun nüfusu 15,7 milyondur [1].')
+    assert.deepEqual(
+      [...new Set(events.map((e) => e.type))],
+      ['search', 'sources', 'read', 'writing', 'token'],
+    )
+    // the model only sees the selected passage, marked as a source
+    assert.match(engine.calls[1][1].content, /\[1\] İstanbul: .*15,7 milyon/)
+  })
+
+  test('never sends personal data even if the model leaves it in the query', async () => {
+    const queries: string[] = []
+    const engine = fakeEngine((messages) =>
+      messages[0].content.startsWith('You turn') ? '0532 123 45 67 numara sahibi bugün' : 'cevap',
+    )
+    const result = await answer('0532 123 45 67 kimin numarası bugün', 'tr', {
+      engine,
+      providers: [provider({ A: 'Numara sahibi hakkında uzun bir açıklama metni burada yer alıyor.' }, queries)],
+    })
+    assert.equal(queries[0], 'numara sahibi bugün')
+    assert.deepEqual(result.removed, ['phone'])
+  })
+
+  test('falls back to keywords when the model fails to write a query', async () => {
+    const queries: string[] = []
+    const engine = {
+      name: 'flaky',
+      calls: 0,
+      async generate(_m: unknown, o?: { onToken?: (t: string) => void }) {
+        this.calls++
+        if (this.calls === 1) throw new Error('timeout')
+        o?.onToken?.('ok')
+        return 'ok'
+      },
+    }
+    await answer('dolar bugün kaç TL', 'tr', { engine, providers: [provider({ Dolar: 'Dolar kuru hakkında yeterince uzun bir metin.' }, queries)] })
+    assert.equal(queries[0], 'dolar bugün TL')
+  })
+
+  test('tells the model when no source was found', async () => {
+    const engine = fakeEngine((messages) => (messages[0].content.startsWith('You turn') ? 'xyz' : 'kaynak yok'))
+    const result = await answer('bugün xyz', 'tr', { engine, providers: [provider({})] })
+    assert.deepEqual(result.sources, [])
+    assert.match(engine.calls[engine.calls.length - 1][0].content, /kaynak bulunamadı/)
+  })
+})
+
+describe('answer (query hygiene)', () => {
+  test('drops numbers and punctuation the model added to the query', async () => {
+    const queries: string[] = []
+    const engine = fakeEngine((messages) =>
+      messages[0].content.startsWith('You turn') ? 'İstanbul nüfusu 2021 yılına göre?' : 'cevap',
+    )
+    await answer('İstanbulun nüfusu son verilere göre', 'tr', {
+      engine,
+      providers: [provider({ İstanbul: 'İstanbul hakkında yeterince uzun bir açıklama metni burada.' }, queries)],
+    })
+    assert.equal(queries[0], 'İstanbul nüfusu yılına göre')
+  })
+})
+

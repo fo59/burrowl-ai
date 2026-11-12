@@ -1,9 +1,7 @@
-// Burrowl AI brand palette (see proje_yeni_markarengi).
-// 90% graphite, white and greys; violet is the single accent, used sparingly.
 export const brand = {
   graphite: '#1C1C1E',
   white: '#FFFFFF',
-  violet: '#9B8CFF',
+  teal: '#2DD4BF',
   canvas: '#F5F5F7',
   ring: '#3A3A3C',
   textSecondary: '#8E8E93',
@@ -11,15 +9,13 @@ export const brand = {
   facet: ['#F2F2F4', '#E8E8EB', '#D9D9DC', '#D0D0D5', '#C6C6CB', '#B4B4BA', '#9E9EA5'],
 } as const
 
-// Semantic roles used by the UI. Dark theme is the default.
 export const colors = {
   background: brand.graphite,
   surface: '#2C2C2E',
   border: brand.ring,
   text: brand.white,
   textMuted: brand.textSecondary,
-  // Violet marks what leaves the device (the search query) and the "AI" wordmark.
-  accent: brand.violet,
+  accent: brand.teal,
   onAccent: brand.graphite,
   danger: '#FF6961',
 } as const

@@ -12,6 +12,9 @@
   "type": "module",
   "private": true,
   "dependencies": {
-  "@burrowl/privacy": "*"
+    "@burrowl/knowledge": "*",
+    "@burrowl/llm-engine": "*",
+    "@burrowl/privacy": "*",
+    "@burrowl/web-search": "*"
   }
 }

@@ -1,0 +1,12 @@
+{
+  "name": "@burrowl/knowledge",
+  "version": "0.0.1",
+  "main": "src/index.ts",
+  "description": "Splits page text into chunks and picks the ones most relevant to a question",
+  "scripts": {
+    "test": "tsc && node --test dist/*.test.js"
+  },
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "private": true
+}

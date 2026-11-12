@@ -15,7 +15,7 @@ const DARK = {
   bg: '#1C1C1E', ring: '#3A3A3C',
   f1: '#FFFFFF', f2: '#D9D9DC', f3: '#E8E8EB', f4: '#B4B4BA',
   f5: '#C6C6CB', f6: '#F2F2F4', f7: '#9E9EA5', f8: '#D0D0D5',
-  eye: '#1C1C1E', key: '#9B8CFF', beak: '#1C1C1E',
+  eye: '#1C1C1E', key: '#2DD4BF', beak: '#1C1C1E',
 };
 
 const PALETTES: Record<Variant, typeof DARK> = {

@@ -1,0 +1,12 @@
+{
+  "name": "@burrowl/web-search",
+  "version": "0.0.1",
+  "main": "src/index.ts",
+  "description": "Searches open sources from the device with an isolated, cookie-free HTTP client",
+  "scripts": {
+    "test": "tsc && node --test dist/*.test.js"
+  },
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "private": true
+}
