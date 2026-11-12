@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 import { DatabaseSync } from 'node:sqlite'
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import {
   createKeyValueChatStore,
   createSqlChatStore,
@@ -110,3 +113,38 @@ describe('titleFrom', () => {
     assert.equal(titleFrom('bana 2026 yılında alınabilecek fiyat performans odaklı bir telefon öner'), 'bana 2026 yılında alınabilecek fiyat pe…')
   })
 })
+
+describe('createSqlChatStore (deleting really deletes)', () => {
+  // Reads every file the database left on disk (main file, WAL, journal).
+  function rawBytes(dir: string): string {
+    return readdirSync(dir).map((f) => readFileSync(join(dir, f)).toString('latin1')).join('')
+  }
+
+  for (const mode of ['DELETE', 'WAL']) {
+    test(`leaves no trace of a deleted chat in the database files (${mode} journal)`, async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'burrowl-'))
+      try {
+        const raw = new DatabaseSync(join(dir, 'chat.db'))
+        raw.exec(`PRAGMA journal_mode = ${mode};`)
+        const store = await createSqlChatStore(nodeSqlite(raw))
+        const secret = 'GIZLI-SORU-1234567890'
+        const keep = await store.createConversation('kalacak')
+        await store.saveMessage(keep.id, { id: 1, role: 'user', text: 'KALAN-MESAJ' })
+        const gone = await store.createConversation(secret)
+        await store.saveMessage(gone.id, { id: 1, role: 'user', text: `${secret} hakkında` })
+        assert.ok(rawBytes(dir).includes(secret) || mode === 'WAL', 'the secret should be on disk before deleting')
+
+        await store.deleteConversation(gone.id)
+        assert.ok(!rawBytes(dir).includes(secret), 'deleted text is still in the database files')
+        assert.ok(rawBytes(dir).includes('KALAN-MESAJ'), 'other chats must stay')
+
+        await store.deleteAll()
+        assert.ok(!rawBytes(dir).includes('KALAN-MESAJ'))
+        raw.close()
+      } finally {
+        rmSync(dir, { recursive: true, force: true })
+      }
+    })
+  }
+})
+

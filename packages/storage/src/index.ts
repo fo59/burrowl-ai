@@ -58,8 +58,17 @@ const MIGRATIONS = [
    CREATE INDEX messages_by_conversation ON messages (conversation_id, id);`,
 ]
 
+// After a delete nothing readable may stay behind: overwrite freed pages with
+// zeros, empty the write-ahead log and rebuild the file without free pages.
+async function wipeFreedSpace(db: SqlDatabase): Promise<void> {
+  await db.all('PRAGMA wal_checkpoint(TRUNCATE)')
+  await db.exec('VACUUM;')
+}
+
 export async function createSqlChatStore(db: SqlDatabase): Promise<ChatStore> {
   await db.exec('PRAGMA foreign_keys = ON;')
+  // SQLite normally only marks deleted rows as free; with this it overwrites them.
+  await db.exec('PRAGMA secure_delete = ON;')
   const [{ user_version: version }] = await db.all<{ user_version: number }>('PRAGMA user_version')
   for (let v = version; v < MIGRATIONS.length; v++) {
     await db.exec(`BEGIN; ${MIGRATIONS[v]} PRAGMA user_version = ${v + 1}; COMMIT;`)
@@ -104,10 +113,12 @@ export async function createSqlChatStore(db: SqlDatabase): Promise<ChatStore> {
 
     async deleteConversation(id) {
       await db.run('DELETE FROM conversations WHERE id = ?', [id])
+      await wipeFreedSpace(db)
     },
 
     async deleteAll() {
       await db.exec('DELETE FROM conversations;')
+      await wipeFreedSpace(db)
     },
   }
 }
