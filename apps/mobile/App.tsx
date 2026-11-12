@@ -1,17 +1,18 @@
 import { useState } from 'react'
-import { StatusBar } from 'expo-status-bar';
-import { colors } from './theme'
-import { Pressable, StyleSheet, Text, TextInput, View, ScrollView } from 'react-native'
+import { StatusBar } from 'expo-status-bar'
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
 import { reply, LANGS, type Lang, type Message } from '@burrowl/assistant'
+import { colors } from './theme'
 import { strings, deviceLang } from './i18n'
+import BurrowlLogo from './components/BurrowlLogo'
+import Icon from './components/Icon'
 
 export default function App() {
   const [lang, setLang] = useState<Lang>(deviceLang)
   const [soru, setSoru] = useState('')
+  const [messages, setMessages] = useState<Message[]>([])
   const bosMu = soru.trim() === ''
   const t = strings[lang]
-
-  const [messages, setMessages] = useState<Message[]>([])
 
   function gonder() {
     if (bosMu) return
@@ -24,12 +25,19 @@ export default function App() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>Burrowl AI</Text>
+        <View style={styles.brand}>
+          <BurrowlLogo size={34} />
+          <Text style={styles.title}>
+            Burrowl <Text style={styles.titleAccent}>AI</Text>
+          </Text>
+        </View>
         <View style={styles.langSwitch}>
           {LANGS.map((l) => (
             <Pressable
               key={l}
               onPress={() => setLang(l)}
+              accessibilityRole="button"
+              accessibilityState={{ selected: l === lang }}
               style={[styles.langButton, l === lang && styles.langButtonActive]}>
               <Text style={[styles.langText, l === lang && styles.langTextActive]}>
                 {l.toUpperCase()}
@@ -37,6 +45,11 @@ export default function App() {
             </Pressable>
           ))}
         </View>
+      </View>
+
+      <View style={styles.onDevice}>
+        <Icon name="shield" size={14} color={colors.textMuted} />
+        <Text style={styles.onDeviceText}>{t.onDevice}</Text>
       </View>
 
       <ScrollView style={styles.messages} contentContainerStyle={styles.messagesContent}>
@@ -47,12 +60,19 @@ export default function App() {
           <View
             key={m.id}
             style={[styles.bubble, m.role === 'user' ? styles.userBubble : styles.assistantBubble]}>
-            {m.searchQuery && <Text style={styles.query}>🌐 {t.searching}: {m.searchQuery}</Text>}
+            {m.searchQuery && (
+              <View style={styles.searchRow}>
+                <Icon name="globe" size={14} color={colors.accent} />
+                <Text style={styles.searchText}>
+                  {t.searching}: {m.searchQuery}
+                </Text>
+              </View>
+            )}
             <Text style={m.role === 'user' ? styles.userText : styles.assistantText}>{m.text}</Text>
           </View>
         ))}
       </ScrollView>
-      
+
       <View style={styles.bottomBar}>
         <TextInput
           style={styles.input}
@@ -63,16 +83,18 @@ export default function App() {
           placeholderTextColor={colors.textMuted}
         />
         <Pressable
-          style={[styles.button, bosMu && styles.buttonDisabled]}
+          style={[styles.sendButton, bosMu && styles.sendButtonDisabled]}
           onPress={gonder}
-          disabled={bosMu}>
-          <Text style={styles.buttonText}>{t.send}</Text>
+          disabled={bosMu}
+          accessibilityRole="button"
+          accessibilityLabel={t.send}>
+          <Icon name="arrowUp" size={20} color={colors.onAccent} />
         </Pressable>
       </View>
 
-      <StatusBar style='light' />
+      <StatusBar style="light" />
     </View>
-  );
+  )
 }
 
 const styles = StyleSheet.create({
@@ -86,12 +108,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    marginBottom: 12,
+  },
+  brand: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
   title: {
     color: colors.text,
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: 'bold',
+  },
+  titleAccent: {
+    color: colors.accent,
   },
   langSwitch: {
     flexDirection: 'row',
@@ -117,49 +146,24 @@ const styles = StyleSheet.create({
   langTextActive: {
     color: colors.background,
   },
-  input: {
-    flex: 1,
-    // On web a text input has an intrinsic width; without this it pushes the row off-screen.
-    minWidth: 0,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 12,
-    backgroundColor: colors.card,
-    color: colors.text,
-  },
-  query: {
-    color: colors.internet,
-    fontFamily: 'monospace',
-  },
-  label: {
-    color: colors.textMuted,
-  },
-  badge: {
-    color: colors.background,
-    backgroundColor: colors.internet,
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 999,
-    fontWeight: 'bold',
-  },
-  message: {
-    color: colors.text,
-  },
-  button: {
-    backgroundColor: colors.text,
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 12,
-    justifyContent: 'center',
+  onDevice: {
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
   },
-  buttonText: {
-    color: colors.background,
-    fontWeight: 'bold',
+  onDeviceText: {
+    color: colors.textMuted,
+    fontSize: 12,
   },
-  buttonDisabled: {
-    opacity: 0.4,
+  messages: {
+    flex: 1,
+    paddingHorizontal: 16,
+  },
+  messagesContent: {
+    gap: 8,
+    paddingVertical: 12,
   },
   bubble: {
     maxWidth: 280,
@@ -173,7 +177,7 @@ const styles = StyleSheet.create({
   },
   assistantBubble: {
     alignSelf: 'flex-start',
-    backgroundColor: colors.card,
+    backgroundColor: colors.surface,
   },
   userText: {
     color: colors.background,
@@ -181,20 +185,45 @@ const styles = StyleSheet.create({
   assistantText: {
     color: colors.text,
   },
-  messages: {
-    flex: 1,
-    paddingHorizontal: 16,
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
-  messagesContent: {
-    gap: 8,
-    paddingVertical: 12,
+  searchText: {
+    flexShrink: 1,
+    color: colors.accent,
+    fontFamily: 'monospace',
+    fontSize: 13,
   },
   bottomBar: {
-    flexDirection: 'row', 
-    alignItems: 'center', 
+    flexDirection: 'row',
+    alignItems: 'center',
     padding: 16,
     gap: 8,
     borderTopWidth: 1,
     borderTopColor: colors.border,
   },
-});
+  input: {
+    flex: 1,
+    // On web a text input has an intrinsic width; without this it pushes the row off-screen.
+    minWidth: 0,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 999,
+    backgroundColor: colors.surface,
+    color: colors.text,
+  },
+  sendButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.accent,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  sendButtonDisabled: {
+    opacity: 0.35,
+  },
+})
