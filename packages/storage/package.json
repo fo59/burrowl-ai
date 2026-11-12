@@ -1,0 +1,12 @@
+{
+  "name": "@burrowl/storage",
+  "version": "0.0.1",
+  "main": "src/index.ts",
+  "description": "Keeps conversations on the device (encrypted SQLite on the phone)",
+  "scripts": {
+    "test": "tsc && node --test dist/*.test.js"
+  },
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "private": true
+}

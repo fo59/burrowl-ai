@@ -177,3 +177,23 @@ describe('exchangeRates', () => {
   })
 })
 
+describe('readPages (cache)', () => {
+  test('reuses pages read earlier in the conversation', async () => {
+    let reads = 0
+    const provider: SearchProvider = {
+      name: 'p',
+      search: async () => [],
+      read: async (r) => {
+        reads++
+        return { title: r.title, url: r.url, text: 'metin' }
+      },
+    }
+    const cache = new Map()
+    const results = [{ title: 'A', url: 'u', snippet: '', provider: 'p' }]
+    await readPages(results, [provider], { lang: 'tr', cache })
+    const again = await readPages(results, [provider], { lang: 'tr', cache })
+    assert.equal(reads, 1)
+    assert.equal(again[0].text, 'metin')
+  })
+})
+

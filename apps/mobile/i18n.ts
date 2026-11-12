@@ -14,6 +14,16 @@ interface Strings {
   noSources: string
   error: string
   kinds: Record<string, string>
+  web: Record<'auto' | 'on' | 'off', string>
+  stop: string
+  stopped: string
+  newChat: string
+  history: string
+  noChats: string
+  deleteChat: string
+  deleteAll: string
+  confirmDeleteAll: string
+  notSaved: string
 }
 
 export const strings: Record<Lang, Strings> = {
@@ -31,6 +41,16 @@ export const strings: Record<Lang, Strings> = {
     noSources: 'Kaynak bulunamadı',
     error: 'Cevap üretilemedi. Ollama bilgisayarda çalışıyor mu?',
     kinds: { email: 'e-posta', phone: 'telefon', iban: 'IBAN', card: 'kart no', tc: 'TC kimlik no', passport: 'pasaport no', snils: 'SNILS', ssn: 'SSN' },
+    web: { auto: 'Web: otomatik', on: 'Web: açık', off: 'Web: kapalı' },
+    stop: 'Durdur',
+    stopped: '(durduruldu)',
+    newChat: 'Yeni sohbet',
+    history: 'Sohbet geçmişi',
+    noChats: 'Henüz kayıtlı sohbet yok.',
+    deleteChat: 'Sohbeti sil',
+    deleteAll: 'Tüm sohbetleri sil',
+    confirmDeleteAll: 'Emin misin? Silmek için tekrar dokun',
+    notSaved: 'Bu cihazda şifreli kayıt yapılamıyor; sohbetler uygulama kapanınca silinir.',
   },
   en: {
     greeting: 'Hi, how can I help you?',
@@ -46,6 +66,16 @@ export const strings: Record<Lang, Strings> = {
     noSources: 'No sources found',
     error: 'Could not generate an answer. Is Ollama running on the computer?',
     kinds: { email: 'e-mail', phone: 'phone', iban: 'IBAN', card: 'card number', tc: 'Turkish ID', passport: 'passport no', snils: 'SNILS', ssn: 'SSN' },
+    web: { auto: 'Web: auto', on: 'Web: on', off: 'Web: off' },
+    stop: 'Stop',
+    stopped: '(stopped)',
+    newChat: 'New chat',
+    history: 'Chat history',
+    noChats: 'No saved chats yet.',
+    deleteChat: 'Delete chat',
+    deleteAll: 'Delete all chats',
+    confirmDeleteAll: 'Are you sure? Tap again to delete',
+    notSaved: 'Encrypted storage is not available on this device; chats are cleared when the app closes.',
   },
   ru: {
     greeting: 'Привет! Чем могу помочь?',
@@ -61,6 +91,16 @@ export const strings: Record<Lang, Strings> = {
     noSources: 'Источники не найдены',
     error: 'Не удалось получить ответ. Запущен ли Ollama на компьютере?',
     kinds: { email: 'e-mail', phone: 'телефон', iban: 'IBAN', card: 'номер карты', tc: 'турецкий ID', passport: 'паспорт', snils: 'СНИЛС', ssn: 'SSN' },
+    web: { auto: 'Веб: авто', on: 'Веб: вкл', off: 'Веб: выкл' },
+    stop: 'Стоп',
+    stopped: '(остановлено)',
+    newChat: 'Новый чат',
+    history: 'История чатов',
+    noChats: 'Сохранённых чатов пока нет.',
+    deleteChat: 'Удалить чат',
+    deleteAll: 'Удалить все чаты',
+    confirmDeleteAll: 'Вы уверены? Нажмите ещё раз, чтобы удалить',
+    notSaved: 'Зашифрованное хранилище недоступно; чаты удалятся при закрытии приложения.',
   },
 }
 

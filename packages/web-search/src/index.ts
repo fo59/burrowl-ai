@@ -170,16 +170,31 @@ export async function searchAll(
 export async function readPages(
   results: SearchResult[],
   providers: SearchProvider[],
-  options: SearchOptions & { http?: Omit<HttpOptions, 'signal'>; onRead?: (done: number, total: number) => void },
+  options: SearchOptions & {
+    http?: Omit<HttpOptions, 'signal'>
+    onRead?: (done: number, total: number) => void
+    // pages already read in this conversation; follow-up questions reuse them
+    // instead of downloading them again
+    cache?: Map<string, Page>
+  },
 ): Promise<Page[]> {
   let done = 0
   const settled = await Promise.allSettled(
     results.map(async (r) => {
       try {
+        const cached = options.cache?.get(r.url)
+        if (cached) return cached
         const provider = providers.find((p) => p.name === r.provider)
-        if (provider?.read) return await provider.read(r, options)
-        const html = await isolatedFetch(r.url, { ...options.http, signal: options.signal })
-        return { title: titleOf(html) || r.title, url: r.url, text: extractText(html) }
+        const page = provider?.read
+          ? await provider.read(r, options)
+          : await isolatedFetch(r.url, { ...options.http, signal: options.signal }).then((html) => ({
+              title: titleOf(html) || r.title,
+              url: r.url,
+              text: extractText(html),
+            }))
+        // exchange rates change; everything else is kept for the conversation
+        if (page && r.provider !== 'rates') options.cache?.set(r.url, page)
+        return page
       } finally {
         options.onRead?.(++done, results.length)
       }

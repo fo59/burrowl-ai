@@ -15,6 +15,7 @@
     "@burrowl/knowledge": "*",
     "@burrowl/llm-engine": "*",
     "@burrowl/privacy": "*",
+    "@burrowl/storage": "*",
     "@burrowl/web-search": "*"
   }
 }

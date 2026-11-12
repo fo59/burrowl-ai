@@ -34,7 +34,14 @@
           "backgroundColor": "#1C1C1E"
         }
       ],
-      "expo-status-bar"
+      "expo-status-bar",
+      [
+        "expo-sqlite",
+        {
+          "useSQLCipher": true
+        }
+      ],
+      "expo-secure-store"
     ]
   }
 }

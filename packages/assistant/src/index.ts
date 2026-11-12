@@ -1,9 +1,19 @@
 import { sanitizeQuery, LANGS, type Lang } from '@burrowl/privacy'
-import { exchangeRates, readPages, searchAll, wikipedia, type SearchProvider } from '@burrowl/web-search'
+import { exchangeRates, readPages, searchAll, wikipedia, type Page, type SearchProvider } from '@burrowl/web-search'
 import { chunkText, rankChunks, terms, type Chunk } from '@burrowl/knowledge'
 import { ollamaEngine, type ChatMessage, type LlmEngine } from '@burrowl/llm-engine'
 
-export { LANGS, type Lang, ollamaEngine, wikipedia, exchangeRates, type LlmEngine, type SearchProvider }
+export { LANGS, type Lang, ollamaEngine, wikipedia, exchangeRates, type LlmEngine, type SearchProvider, type Page }
+// The UI only talks to the orchestrator, so conversation storage is reached through it too.
+export {
+  createKeyValueChatStore,
+  createSqlChatStore,
+  titleFrom,
+  type ChatStore,
+  type Conversation,
+  type SqlDatabase,
+  type StoredMessage,
+} from '@burrowl/storage'
 
 // JavaScript's \b only treats ASCII letters as word characters; these work for every script.
 const B = String.raw`(?<![\p{L}\p{N}])`
@@ -330,6 +340,8 @@ export interface AnswerOptions {
   engine: LlmEngine
   // earlier messages of the conversation, oldest first
   history?: ChatMessage[]
+  // pages read earlier in this conversation (reused by follow-up questions)
+  pageCache?: Map<string, Page>
   providers?: SearchProvider[]
   web?: 'auto' | 'on' | 'off'
   signal?: AbortSignal
@@ -393,6 +405,7 @@ export async function answer(question: string, uiLang: Lang, options: AnswerOpti
   const pages = await readPages(results, providers, {
     lang,
     signal,
+    cache: options.pageCache,
     onRead: (done, total) => onEvent?.({ type: 'read', done, total }),
   })
   const chunks = pages.flatMap((p) => {

@@ -1,22 +1,96 @@
-import { useMemo, useRef, useState, type ComponentRef } from 'react'
+import { useEffect, useMemo, useRef, useState, type ComponentRef } from 'react'
 import { StatusBar } from 'expo-status-bar'
-import { Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
-import { answer, ollamaEngine, LANGS, type Lang, type Message } from '@burrowl/assistant'
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
+import {
+  answer,
+  ollamaEngine,
+  titleFrom,
+  LANGS,
+  type ChatStore,
+  type Conversation,
+  type Lang,
+  type Message,
+  type Page,
+} from '@burrowl/assistant'
 import { colors } from './theme'
 import { strings, deviceLang } from './i18n'
 import { OLLAMA_MODEL, OLLAMA_URL } from './config'
+import { openChatStore } from './chatStore'
+import { fromStored, toStored } from './messages'
 import BurrowlLogo from './components/BurrowlLogo'
 import Icon from './components/Icon'
+import MessageBubble from './components/MessageBubble'
+import HistoryPanel from './components/HistoryPanel'
+
+type WebMode = 'auto' | 'on' | 'off'
+const NEXT_WEB_MODE: Record<WebMode, WebMode> = { auto: 'on', on: 'off', off: 'auto' }
 
 export default function App() {
   const [lang, setLang] = useState<Lang>(deviceLang)
   const [soru, setSoru] = useState('')
   const [messages, setMessages] = useState<Message[]>([])
   const [busy, setBusy] = useState(false)
+  const [webMode, setWebMode] = useState<WebMode>('auto')
+  const [store, setStore] = useState<ChatStore | null | undefined>(undefined)
+  const [conversations, setConversations] = useState<Conversation[]>([])
+  const [conversationId, setConversationId] = useState<string | null>(null)
+  const [showHistory, setShowHistory] = useState(false)
   const scroll = useRef<ComponentRef<typeof ScrollView>>(null)
+  const controller = useRef<AbortController | null>(null)
+  // pages read in this conversation; follow-up questions reuse them
+  const pageCache = useRef(new Map<string, Page>())
   const engine = useMemo(() => ollamaEngine({ model: OLLAMA_MODEL, baseUrl: OLLAMA_URL }), [])
   const bosMu = soru.trim() === ''
   const t = strings[lang]
+
+  // Open the chat store and continue the most recent conversation.
+  useEffect(() => {
+    void (async () => {
+      const opened = await openChatStore()
+      setStore(opened)
+      if (!opened) return
+      const list = await opened.listConversations()
+      setConversations(list)
+      if (list[0]) {
+        setConversationId(list[0].id)
+        setMessages((await opened.loadMessages(list[0].id)).map(fromStored))
+      }
+    })()
+  }, [])
+
+  async function refreshConversations() {
+    if (store) setConversations(await store.listConversations())
+  }
+
+  function newChat() {
+    controller.current?.abort()
+    setMessages([])
+    setConversationId(null)
+    pageCache.current = new Map()
+    setShowHistory(false)
+  }
+
+  async function openConversation(id: string) {
+    if (!store || busy) return
+    setConversationId(id)
+    setMessages((await store.loadMessages(id)).map(fromStored))
+    pageCache.current = new Map()
+    setShowHistory(false)
+  }
+
+  async function deleteConversation(id: string) {
+    if (!store) return
+    await store.deleteConversation(id)
+    if (id === conversationId) newChat()
+    await refreshConversations()
+  }
+
+  async function deleteAll() {
+    if (!store) return
+    await store.deleteAll()
+    newChat()
+    setConversations([])
+  }
 
   async function gonder() {
     if (bosMu || busy) return
@@ -26,44 +100,57 @@ export default function App() {
     const history = messages
       .filter((m) => m.text && (m.role === 'user' || m.status === 'done'))
       .map((m) => ({ role: m.role, content: m.text }))
-    setMessages((prev) => [
-      ...prev,
-      { id, role: 'user', text: question },
-      { id: id + 1, role: 'assistant', text: '', status: 'thinking' },
-    ])
+
+    const userMessage: Message = { id, role: 'user', text: question }
+    let reply: Message = { id: id + 1, role: 'assistant', text: '', status: 'thinking' }
+    setMessages((prev) => [...prev, userMessage, reply])
     setSoru('')
     setBusy(true)
 
-    // Updates arrive while the answer is being built, so always patch the latest state.
-    const patch = (change: (m: Message) => Partial<Message>) =>
-      setMessages((prev) => prev.map((m) => (m.id === id + 1 ? { ...m, ...change(m) } : m)))
+    let convId = conversationId
+    if (store && !convId) {
+      convId = (await store.createConversation(titleFrom(question))).id
+      setConversationId(convId)
+    }
+    if (store && convId) await store.saveMessage(convId, toStored(userMessage))
 
+    // Updates arrive while the answer is being built; keep a copy for saving.
+    const update = (change: Partial<Message>) => {
+      reply = { ...reply, ...change }
+      const snapshot = reply
+      setMessages((prev) => prev.map((m) => (m.id === snapshot.id ? snapshot : m)))
+    }
+
+    const abort = new AbortController()
+    controller.current = abort
     try {
       const result = await answer(question, lang, {
         engine,
         history,
+        web: webMode,
+        signal: abort.signal,
+        pageCache: pageCache.current,
         onEvent: (e) => {
-          if (e.type === 'search') patch(() => ({ status: 'searching', searchQuery: e.query, removed: e.removed }))
-          else if (e.type === 'sources') patch(() => ({ sources: e.sources }))
-          else if (e.type === 'read') patch(() => ({ status: 'reading', read: { done: e.done, total: e.total } }))
-          else if (e.type === 'writing') patch(() => ({ status: 'writing' }))
-          else if (e.type === 'token') patch((m) => ({ text: m.text + e.text }))
+          if (e.type === 'search') update({ status: 'searching', searchQuery: e.query, removed: e.removed })
+          else if (e.type === 'sources') update({ sources: e.sources })
+          else if (e.type === 'read') update({ status: 'reading', read: { done: e.done, total: e.total } })
+          else if (e.type === 'writing') update({ status: 'writing' })
+          else if (e.type === 'token') update({ text: reply.text + e.text })
         },
       })
       // the final text has citations to non-existent sources removed
-      patch(() => ({ status: 'done', text: result.text }))
+      update({ status: 'done', text: result.text })
     } catch {
-      patch(() => ({ status: 'error' }))
+      if (abort.signal.aborted) update({ status: 'done', text: `${reply.text} ${t.stopped}`.trim() })
+      else update({ status: 'error' })
     } finally {
+      controller.current = null
       setBusy(false)
+      if (store && convId) {
+        await store.saveMessage(convId, toStored(reply))
+        await refreshConversations()
+      }
     }
-  }
-
-  function statusText(m: Message): string | null {
-    if (m.status === 'thinking' || (m.status === 'searching' && !m.sources)) return t.thinking
-    if (m.status === 'reading' && m.read) return t.reading(m.read.done, m.read.total)
-    if (m.status === 'writing' && !m.text) return t.writing
-    return null
   }
 
   return (
@@ -83,19 +170,25 @@ export default function App() {
             </View>
           </View>
         </View>
-        <View style={styles.langSwitch}>
-          {LANGS.map((l) => (
-            <Pressable
-              key={l}
-              onPress={() => setLang(l)}
-              accessibilityRole="button"
-              accessibilityState={{ selected: l === lang }}
-              style={[styles.langButton, l === lang && styles.langButtonActive]}>
-              <Text style={[styles.langText, l === lang && styles.langTextActive]}>
-                {l.toUpperCase()}
-              </Text>
-            </Pressable>
-          ))}
+        <View style={styles.headerActions}>
+          <Pressable onPress={() => setShowHistory(true)} accessibilityRole="button" accessibilityLabel={t.history} hitSlop={8}>
+            <Icon name="history" size={20} color={colors.text} />
+          </Pressable>
+          <Pressable onPress={newChat} accessibilityRole="button" accessibilityLabel={t.newChat} hitSlop={8}>
+            <Icon name="plus" size={22} color={colors.text} />
+          </Pressable>
+          <View style={styles.langSwitch}>
+            {LANGS.map((l) => (
+              <Pressable
+                key={l}
+                onPress={() => setLang(l)}
+                accessibilityRole="button"
+                accessibilityState={{ selected: l === lang }}
+                style={[styles.langButton, l === lang && styles.langButtonActive]}>
+                <Text style={[styles.langText, l === lang && styles.langTextActive]}>{l.toUpperCase()}</Text>
+              </Pressable>
+            ))}
+          </View>
         </View>
       </View>
 
@@ -104,53 +197,27 @@ export default function App() {
         style={styles.messages}
         contentContainerStyle={styles.messagesContent}
         onContentSizeChange={() => scroll.current?.scrollToEnd({ animated: true })}>
-        <View style={[styles.bubble, styles.assistantBubble]}>
-          <Text style={styles.assistantText}>{t.greeting}</Text>
-        </View>
-        {messages.map((m) => {
-          const status = statusText(m)
-          return (
-            <View
-              key={m.id}
-              style={[styles.bubble, m.role === 'user' ? styles.userBubble : styles.assistantBubble]}>
-              {m.searchQuery !== undefined && (
-                <View style={styles.searchRow}>
-                  <Icon name="globe" size={14} color={colors.accent} />
-                  <Text style={styles.searchText}>
-                    {t.searching}: {m.searchQuery}
-                  </Text>
-                </View>
-              )}
-              {m.removed && m.removed.length > 0 && (
-                <Text style={styles.meta}>
-                  {t.removedFromQuery}: {m.removed.map((k) => t.kinds[k] ?? k).join(', ')}
-                </Text>
-              )}
-              {status && <Text style={styles.meta}>{status}</Text>}
-              {m.status === 'error' ? (
-                <Text style={styles.errorText}>{t.error}</Text>
-              ) : (
-                !!m.text && <Text style={m.role === 'user' ? styles.userText : styles.assistantText}>{m.text}</Text>
-              )}
-              {m.status === 'done' && m.sources && (
-                <View style={styles.sources}>
-                  <Text style={styles.meta}>{m.sources.length ? t.sources : t.noSources}</Text>
-                  {m.sources.map((s) => (
-                    <Pressable key={s.n} onPress={() => Linking.openURL(s.url)} accessibilityRole="link">
-                      <Text style={styles.sourceText} numberOfLines={1}>
-                        <Text style={styles.sourceNumber}>[{s.n}] </Text>
-                        {s.title}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </View>
-              )}
-            </View>
-          )
-        })}
+        {store === null && <Text style={styles.notice}>{t.notSaved}</Text>}
+        <MessageBubble message={{ id: 0, role: 'assistant', text: t.greeting }} t={t} />
+        {messages.map((m) => (
+          <MessageBubble key={m.id} message={m} t={t} />
+        ))}
       </ScrollView>
 
+      {webMode !== 'auto' && <Text style={styles.webModeLabel}>{t.web[webMode]}</Text>}
       <View style={styles.bottomBar}>
+        <Pressable
+          style={styles.webButton}
+          onPress={() => setWebMode(NEXT_WEB_MODE[webMode])}
+          accessibilityRole="button"
+          accessibilityLabel={t.web[webMode]}
+          hitSlop={6}>
+          <Icon
+            name={webMode === 'off' ? 'globeOff' : 'globe'}
+            size={22}
+            color={webMode === 'on' ? colors.accent : colors.textMuted}
+          />
+        </Pressable>
         <TextInput
           style={styles.input}
           value={soru}
@@ -159,15 +226,38 @@ export default function App() {
           placeholder={t.placeholder}
           placeholderTextColor={colors.textMuted}
         />
-        <Pressable
-          style={[styles.sendButton, (bosMu || busy) && styles.sendButtonDisabled]}
-          onPress={gonder}
-          disabled={bosMu || busy}
-          accessibilityRole="button"
-          accessibilityLabel={t.send}>
-          <Icon name="arrowUp" size={20} color={colors.onAccent} />
-        </Pressable>
+        {busy ? (
+          <Pressable
+            style={styles.sendButton}
+            onPress={() => controller.current?.abort()}
+            accessibilityRole="button"
+            accessibilityLabel={t.stop}>
+            <Icon name="stop" size={18} color={colors.onAccent} />
+          </Pressable>
+        ) : (
+          <Pressable
+            style={[styles.sendButton, bosMu && styles.sendButtonDisabled]}
+            onPress={gonder}
+            disabled={bosMu}
+            accessibilityRole="button"
+            accessibilityLabel={t.send}>
+            <Icon name="arrowUp" size={20} color={colors.onAccent} />
+          </Pressable>
+        )}
       </View>
+
+      {showHistory && (
+        <HistoryPanel
+          conversations={conversations}
+          currentId={conversationId}
+          lang={lang}
+          t={t}
+          onOpen={openConversation}
+          onDelete={deleteConversation}
+          onDeleteAll={deleteAll}
+          onClose={() => setShowHistory(false)}
+        />
+      )}
 
       <StatusBar style="light" />
     </View>
@@ -193,6 +283,10 @@ const styles = StyleSheet.create({
     gap: 10,
     flexShrink: 1,
   },
+  brandText: {
+    flexShrink: 1,
+    gap: 2,
+  },
   title: {
     color: colors.text,
     fontSize: 22,
@@ -201,16 +295,31 @@ const styles = StyleSheet.create({
   titleAccent: {
     color: colors.accent,
   },
+  slogan: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  sloganText: {
+    flexShrink: 1,
+    color: colors.textMuted,
+    fontSize: 12,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+  },
   langSwitch: {
     flexDirection: 'row',
-    gap: 4,
+    gap: 2,
     padding: 3,
     borderRadius: 999,
     borderWidth: 1,
     borderColor: colors.border,
   },
   langButton: {
-    paddingHorizontal: 10,
+    paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 999,
   },
@@ -225,20 +334,6 @@ const styles = StyleSheet.create({
   langTextActive: {
     color: colors.background,
   },
-  brandText: {
-    flexShrink: 1,
-    gap: 2,
-  },
-  slogan: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  sloganText: {
-    flexShrink: 1,
-    color: colors.textMuted,
-    fontSize: 12,
-  },
   messages: {
     flex: 1,
     paddingHorizontal: 16,
@@ -247,58 +342,17 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingVertical: 12,
   },
-  bubble: {
-    maxWidth: '85%',
-    padding: 12,
-    borderRadius: 16,
-    gap: 6,
-  },
-  userBubble: {
-    alignSelf: 'flex-end',
-    backgroundColor: colors.text,
-  },
-  assistantBubble: {
-    alignSelf: 'flex-start',
-    backgroundColor: colors.surface,
-  },
-  userText: {
-    color: colors.background,
-  },
-  assistantText: {
-    color: colors.text,
-  },
-  searchRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  searchText: {
-    flexShrink: 1,
-    color: colors.accent,
-    fontFamily: 'monospace',
-    fontSize: 13,
-  },
-  meta: {
+  notice: {
     color: colors.textMuted,
     fontSize: 12,
+    textAlign: 'center',
+    paddingVertical: 4,
   },
-  errorText: {
-    color: colors.danger,
-  },
-  sources: {
-    gap: 4,
-    marginTop: 4,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-  },
-  sourceText: {
+  webModeLabel: {
     color: colors.textMuted,
-    fontSize: 13,
-  },
-  sourceNumber: {
-    color: colors.accent,
-    fontWeight: 'bold',
+    fontSize: 12,
+    paddingHorizontal: 16,
+    paddingTop: 8,
   },
   bottomBar: {
     flexDirection: 'row',
@@ -307,6 +361,12 @@ const styles = StyleSheet.create({
     gap: 8,
     borderTopWidth: 1,
     borderTopColor: colors.border,
+  },
+  webButton: {
+    width: 36,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   input: {
     flex: 1,
