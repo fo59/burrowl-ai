@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 import {
+  currenciesIn,
+  exchangeRates,
   extractText,
   isolatedFetch,
   readPages,
@@ -136,3 +138,42 @@ describe('readPages', () => {
     assert.deepEqual(progress.sort(), [1, 2])
   })
 })
+
+describe('exchangeRates', () => {
+  test('finds currencies in order, in any language and spelling', () => {
+    assert.deepEqual(currenciesIn('dolar kaç TL'), ['USD', 'TRY'])
+    assert.deepEqual(currenciesIn('курс евро к рублю'), ['EUR', 'RUB'])
+    assert.deepEqual(currenciesIn('guncel tl ruble kac kur'), ['TRY', 'RUB'])
+    assert.deepEqual(currenciesIn('iphone fiyatı'), [])
+  })
+
+  test('uses the home currency when only one is named', async () => {
+    const results = await exchangeRates().search('euro kuru', { lang: 'tr' })
+    assert.equal(results[0].title, 'EUR/TRY (ECB)')
+  })
+
+  test('turns the rate into a citable source', async () => {
+    const provider = exchangeRates({
+      fetchImpl: fakeFetch({ frankfurter: { date: '2026-11-11', base: 'USD', rates: { TRY: 50.229 } } }),
+    })
+    const [result] = await provider.search('dolar TL', { lang: 'tr' })
+    const page = await provider.read!(result, { lang: 'tr' })
+    assert.match(page!.text, /2026-11-11: 1 USD = 50.229 TRY/)
+  })
+
+  test('says honestly that the rouble is not published', async () => {
+    const provider = exchangeRates({ fetchImpl: fakeFetch({}) })
+    const [result] = await provider.search('tl ruble', { lang: 'tr' })
+    const page = await provider.read!(result, { lang: 'tr' })
+    assert.match(page!.text, /does not publish RUB/)
+  })
+
+  test('ignores the English word "try"', async () => {
+    assert.deepEqual(await exchangeRates().search('how to try yoga at home', { lang: 'en' }), [])
+  })
+
+  test('ignores questions without a currency', async () => {
+    assert.deepEqual(await exchangeRates().search('en iyi telefon', { lang: 'tr' }), [])
+  })
+})
+

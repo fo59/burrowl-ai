@@ -10,6 +10,9 @@ import {
   needsSearch,
   reply,
   toOutgoingQuery,
+  foldTurkish,
+  dropInvalidCitations,
+  recentHistory,
   type AnswerEvent,
 } from './index.js'
 
@@ -270,6 +273,135 @@ describe('answer (query hygiene)', () => {
       providers: [provider({ İstanbul: 'İstanbul hakkında yeterince uzun bir açıklama metni burada.' }, queries)],
     })
     assert.equal(queries[0], 'İstanbul nüfusu yılına göre')
+  })
+})
+
+describe('needsSearch (typed without Turkish letters)', () => {
+  test('folds Turkish letters', () => {
+    assert.equal(foldTurkish('Güncel Şehir İçin Öner'), 'guncel sehir icin oner')
+  })
+  test('catches "guncel" written without ü', () => {
+    assert.equal(needsSearch('bana guncel telefon oner', 'tr'), true)
+  })
+  test('catches a recommendation request', () => {
+    assert.equal(needsSearch('fiyat performans odakli bir telefon oner', 'tr'), true)
+  })
+  test('catches "en iyi"', () => {
+    assert.equal(needsSearch('en iyi kulaklık hangisi', 'tr'), true)
+  })
+  test('catches English and Russian recommendations', () => {
+    assert.equal(needsSearch('recommend a laptop for students', 'en'), true)
+    assert.equal(needsSearch('посоветуй хороший ноутбук', 'ru'), true)
+  })
+  test('still ignores a plain chat message', () => {
+    assert.equal(needsSearch('merhaba nasilsin', 'tr'), false)
+  })
+})
+
+describe('recentHistory', () => {
+  test('keeps the last turns and shortens long answers', () => {
+    const history = Array.from({ length: 10 }, (_, i) => ({
+      role: (i % 2 ? 'assistant' : 'user') as 'user' | 'assistant',
+      content: i === 9 ? 'x'.repeat(800) : `m${i}`,
+    }))
+    const recent = recentHistory(history)
+    assert.equal(recent.length, 6)
+    assert.equal(recent[0].content, 'm4')
+    assert.equal(recent[5].content.length, 501)
+  })
+})
+
+describe('answer (conversation)', () => {
+  const history = [
+    { role: 'user' as const, content: '2026 da fiyat performans telefon oner' },
+    { role: 'assistant' as const, content: 'Casper VIA öneririm.' },
+  ]
+
+  test('searches again for a follow-up about an earlier search', async () => {
+    const queries: string[] = []
+    const engine = fakeEngine((m) => (m[0].content.startsWith('You turn') ? '2026 fiyat performans telefon' : 'cevap'))
+    await answer('bu cok eski degil mi', 'tr', {
+      engine,
+      history,
+      providers: [provider({ Telefon: 'Akıllı telefonlar hakkında yeterince uzun bir açıklama metni.' }, queries)],
+    })
+    assert.equal(queries[0], '2026 fiyat performans telefon')
+  })
+
+  test('gives earlier turns to the model', async () => {
+    const engine = fakeEngine('cevap')
+    await answer('tesekkurler', 'tr', { engine, history })
+    const messages = engine.calls[0]
+    assert.deepEqual(messages.slice(1, 3), history)
+    assert.equal(messages[3].content, 'tesekkurler')
+  })
+
+  test('does not search after a greeting just because the previous turn did', async () => {
+    const queries: string[] = []
+    const engine = fakeEngine('Merhaba!')
+    await answer('merhaba', 'tr', { engine, history, providers: [provider({}, queries)] })
+    assert.deepEqual(queries, [])
+  })
+})
+
+describe('answer (prompt hygiene)', () => {
+  test('tells the model today\'s date', () => {
+    const messages = buildPrompt('soru', 'tr', [], null, [], new Date(2026, 10, 12))
+    assert.match(messages[0].content, /Bugünün tarihi: 12 Kasım 2026/)
+  })
+
+  test('cuts a sentence-long query to six words without question words', async () => {
+    const queries: string[] = []
+    const engine = fakeEngine((m) =>
+      m[0].content.startsWith('You turn')
+        ? '2026 yılındaki fiyat performansı odaklı telefon önerisi için ne arıyorsunuz'
+        : 'cevap',
+    )
+    await answer('bana 2026 yilinda fiyat performans odakli telefon oner', 'tr', {
+      engine,
+      providers: [provider({ T: 'Telefonlar hakkında yeterince uzun bir açıklama metni burada.' }, queries)],
+    })
+    assert.equal(queries[0], '2026 yılındaki fiyat performansı odaklı telefon')
+  })
+
+  test('writes the query from the user\'s words, not from earlier answers', async () => {
+    const engine = fakeEngine('sorgu')
+    await answer('bugun daha yenisi var mi', 'tr', {
+      engine,
+      history: [
+        { role: 'user', content: 'telefon oner' },
+        { role: 'assistant', content: 'Casper Excalibur öneririm.' },
+      ],
+      providers: [provider({})],
+    })
+    const rewriteCall = engine.calls[0]
+    assert.ok(rewriteCall.every((m) => !m.content.includes('Excalibur')))
+    assert.match(rewriteCall[1].content, /Önceki soru: telefon oner\nSoru: bugun daha yenisi var mi/)
+  })
+})
+
+describe('answer (topic changes)', () => {
+  test('does not mix an unrelated earlier question into a new search', async () => {
+    const engine = fakeEngine('sorgu')
+    await answer('En son cikan iphone modeli', 'tr', {
+      engine,
+      history: [
+        { role: 'user', content: 'Tl dolar kuru nedir' },
+        { role: 'assistant', content: '1 USD = 50 TL [1]' },
+      ],
+      providers: [provider({})],
+    })
+    assert.equal(engine.calls[0][1].content, 'En son cikan iphone modeli')
+  })
+})
+
+describe('dropInvalidCitations', () => {
+  test('keeps citations that point to a real source', () => {
+    assert.equal(dropInvalidCitations('Ankara [1] başkenttir [2].', 2), 'Ankara [1] başkenttir [2].')
+  })
+  test('removes citations to sources that do not exist', () => {
+    assert.equal(dropInvalidCitations('Model S Plaid [3]', 0), 'Model S Plaid')
+    assert.equal(dropInvalidCitations('A [1], B [4].', 2), 'A [1], B.')
   })
 })
 

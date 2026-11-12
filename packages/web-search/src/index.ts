@@ -187,3 +187,77 @@ export async function readPages(
   )
   return settled.flatMap((s) => (s.status === 'fulfilled' && s.value ? [s.value] : []))
 }
+
+// --- Exchange rates ----------------------------------------------------------
+
+// Names people use for each currency, folded to plain lowercase letters.
+const CURRENCY_NAMES: [string, RegExp][] = [
+  ['TRY', /(^|[^\p{L}])(tl|try|lira|turk lirasi|türk lirası|лир)/iu],
+  ['USD', /(^|[^\p{L}])(usd|dolar|dollar|доллар)|\$/iu],
+  ['EUR', /(^|[^\p{L}])(eur|euro|avro|евро)|€/iu],
+  ['GBP', /(^|[^\p{L}])(gbp|sterlin|pound|фунт)|£/iu],
+  ['RUB', /(^|[^\p{L}])(rub|ruble|rublesi|рубл)|₽/iu],
+  ['JPY', /(^|[^\p{L}])(jpy|yen|иен)/iu],
+  ['CHF', /(^|[^\p{L}])(chf|frank|franc|франк)/iu],
+]
+
+const RATE_WORDS = /(^|[^\p{L}])(kur|kuru|kaç|kac|döviz|doviz|rate|exchange|convert|курс|сколько|обмен)/iu
+
+const HOME_CURRENCY: Record<string, string> = { tr: 'TRY', ru: 'RUB', en: 'USD' }
+
+// The European Central Bank stopped publishing rouble rates in 2022.
+const ECB_MISSING = new Set(['RUB'])
+
+export function currenciesIn(text: string): string[] {
+  return CURRENCY_NAMES.map(([code, re]) => ({ code, at: text.search(re) }))
+    .filter((c) => c.at >= 0)
+    .sort((a, b) => a.at - b.at)
+    .map((c) => c.code)
+}
+
+// Official reference rates from the European Central Bank, served without a key
+// by frankfurter.dev. Answers "dolar kaç TL" style questions with a real number.
+export function exchangeRates(http: Omit<HttpOptions, 'signal'> = {}): SearchProvider {
+  return {
+    name: 'rates',
+
+    async search(query, { lang }) {
+      const found = currenciesIn(query)
+      // "try" is also an English word; only act on an actual rate question
+      const asksRate = found.length >= 2 || RATE_WORDS.test(query)
+      if (found.length === 0 || !asksRate) return []
+      const home = HOME_CURRENCY[lang] ?? 'USD'
+      const base = found[0]
+      const target = found[1] ?? (base === home ? (home === 'USD' ? 'EUR' : 'USD') : home)
+      return [{
+        title: `${base}/${target} (ECB)`,
+        url: `https://api.frankfurter.dev/v1/latest?base=${base}&symbols=${target}`,
+        snippet: '',
+        provider: 'rates',
+      }]
+    },
+
+    async read(result, { signal }) {
+      const [base, target] = result.title.split(' ')[0].split('/')
+      if (ECB_MISSING.has(base) || ECB_MISSING.has(target)) {
+        return {
+          title: result.title,
+          url: result.url,
+          text: `The European Central Bank does not publish ${ECB_MISSING.has(base) ? base : target} rates (stopped in 2022), so no official ${base}/${target} rate is available from this source.`,
+        }
+      }
+      const body = await isolatedFetch(result.url, { ...http, signal })
+      const data = JSON.parse(body) as { date: string; base: string; rates: Record<string, number> }
+      const rate = data.rates[target]
+      if (rate === undefined) return null
+      return {
+        title: result.title,
+        url: result.url,
+        text:
+          `Official reference exchange rate of the European Central Bank on ${data.date}: ` +
+          `1 ${base} = ${rate} ${target}; 1 ${target} = ${(1 / rate).toFixed(6)} ${base}. ` +
+          'Banks and exchange offices apply their own buy and sell rates around this value.',
+      }
+    },
+  }
+}

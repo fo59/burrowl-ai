@@ -22,6 +22,10 @@ export default function App() {
     if (bosMu || busy) return
     const question = soru.trim()
     const id = Date.now()
+    // Finished turns of this conversation, so follow-up questions have context.
+    const history = messages
+      .filter((m) => m.text && (m.role === 'user' || m.status === 'done'))
+      .map((m) => ({ role: m.role, content: m.text }))
     setMessages((prev) => [
       ...prev,
       { id, role: 'user', text: question },
@@ -35,8 +39,9 @@ export default function App() {
       setMessages((prev) => prev.map((m) => (m.id === id + 1 ? { ...m, ...change(m) } : m)))
 
     try {
-      await answer(question, lang, {
+      const result = await answer(question, lang, {
         engine,
+        history,
         onEvent: (e) => {
           if (e.type === 'search') patch(() => ({ status: 'searching', searchQuery: e.query, removed: e.removed }))
           else if (e.type === 'sources') patch(() => ({ sources: e.sources }))
@@ -45,7 +50,8 @@ export default function App() {
           else if (e.type === 'token') patch((m) => ({ text: m.text + e.text }))
         },
       })
-      patch(() => ({ status: 'done' }))
+      // the final text has citations to non-existent sources removed
+      patch(() => ({ status: 'done', text: result.text }))
     } catch {
       patch(() => ({ status: 'error' }))
     } finally {
