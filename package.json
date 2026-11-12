@@ -1,17 +1,19 @@
 {
   "name": "burrowl-ai",
   "version": "0.0.1",
-  "description": "Private AI assistant that runs fully on your phone",
+  "description": "Privacy-first AI assistant that runs on your phone and answers from the web with cited sources",
   "private": true,
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "npm test --workspaces --if-present",
+    "web": "npm run web -w @burrowl/mobile",
+    "eval": "node tools/eval.ts qwen2.5:1.5b"
   },
-  "keywords": [],
   "author": "Furkan",
   "license": "AGPL-3.0-only",
   "type": "module",
   "workspaces": [
-    "apps/*", "packages/*"
+    "apps/*",
+    "packages/*"
   ],
   "devDependencies": {
     "@types/node": "26.6.6",

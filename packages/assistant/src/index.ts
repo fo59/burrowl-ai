@@ -1,4 +1,4 @@
-import { sanitizeQuery, LANGS, type Lang } from '@burrowl/privacy'
+import { LANGS, type Lang } from '@burrowl/privacy'
 import {
   currentWeather,
   exchangeRates,
@@ -18,7 +18,6 @@ import {
 import { chunkText, rankChunks, type Chunk } from '@burrowl/knowledge'
 import { ollamaEngine, type ChatMessage, type LlmEngine } from '@burrowl/llm-engine'
 import { LOCALES, detectLanguage } from './text.ts'
-import { needsSearch } from './decide.ts'
 import {
   keywordQuery,
   recentHistory,
@@ -65,32 +64,6 @@ export interface Message {
   // privacy rule kinds that were removed from the outgoing query (email, phone...)
   removed?: string[]
   read?: { done: number; total: number }
-}
-
-const placeholderReplies: Record<Lang, { search: string; local: string }> = {
-  tr: {
-    search: 'Bunun için internette arama yapmam gerekiyor. (yakında)',
-    local: 'Bu soruyu cihazda cevaplayabilirim. (yakında)',
-  },
-  en: {
-    search: 'I need to search the web for this. (coming soon)',
-    local: 'I can answer this on the device. (coming soon)',
-  },
-  ru: {
-    search: 'Для этого мне нужно поискать в интернете. (скоро)',
-    local: 'Я могу ответить на это прямо на устройстве. (скоро)',
-  },
-}
-
-export function reply(question: string, id: number, uiLang: Lang = 'tr'): Message {
-  const search = needsSearch(question, uiLang)
-  const langs = [uiLang, detectLanguage(question, uiLang)]
-  return {
-    id,
-    role: 'assistant',
-    text: search ? placeholderReplies[uiLang].search : placeholderReplies[uiLang].local,
-    searchQuery: search ? sanitizeQuery(question, langs).text : undefined,
-  }
 }
 
 // --- Answer flow -----------------------------------------------------------

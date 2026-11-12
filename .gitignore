@@ -9,3 +9,10 @@ dist/
 Komut Defterim.docx
 # Proje planı (gelir modeli içerir, açık repoya girmesin)
 Local_AI_Mobile_Proje_Tanimi*.docx
+
+# Local tooling and design source files (not part of the app)
+.claude/
+CLAUDE.md
+AGENTS.md
+burrowl-expo/
+proje_yeni_markarengi

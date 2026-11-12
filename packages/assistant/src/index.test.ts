@@ -8,7 +8,6 @@ import {
   detectLanguage,
   keywordQuery,
   needsSearch,
-  reply,
   toOutgoingQuery,
   foldTurkish,
   dropInvalidCitations,
@@ -61,29 +60,6 @@ describe('needsSearch', () => {
   test('ignores a 5-digit number starting like a year', () => {
     assert.equal(needsSearch('20261 adet'), false)
   })
-})
-
-describe('reply', () => {
-  test('answers on the device when no search is needed', () => {
-    const r = reply('bana bir şiir yaz', 1)
-    assert.equal(r.role, 'assistant')
-    assert.equal(r.searchQuery, undefined)
-  })
-
-  test('includes the filtered query when search is needed', () => {
-    const r = reply('ali@gmail.com dolar bugün kaç TL', 2)
-    assert.equal(r.searchQuery, '[email removed] dolar bugün kaç TL')
-  })
-
-  test('never puts a phone number into the search query', () => {
-    const r = reply('0532 123 45 67 numaralı hattın fiyatı', 3)
-    assert.equal(r.searchQuery, '[phone number removed] numaralı hattın fiyatı')
-  })
-
-  test('uses the given id', () => {
-    assert.equal(reply('merhaba', 42).id, 42)
-  })
-
 })
 
 describe('needsSearch (English)', () => {
@@ -140,20 +116,6 @@ describe('detectLanguage', () => {
   })
   test('falls back when the script is ambiguous', () => {
     assert.equal(detectLanguage('hello', 'tr'), 'tr')
-  })
-})
-
-describe('reply (languages)', () => {
-  test('answers in the UI language', () => {
-    assert.equal(reply('write a poem', 1, 'en').text, 'I can answer this on the device. (coming soon)')
-  })
-  test('filters a Russian phone number from the query', () => {
-    const r = reply('чей номер +7 912 345-67-89 сегодня', 2, 'ru')
-    assert.equal(r.searchQuery, 'чей номер [phone number removed] сегодня')
-  })
-  test('applies Turkish privacy rules to Turkish text even in English mode', () => {
-    const r = reply('12345678901 kime ait bugün', 3, 'en')
-    assert.equal(r.searchQuery, '[TC number removed] kime ait bugün')
   })
 })
 

@@ -27,7 +27,7 @@ const NEXT_WEB_MODE: Record<WebMode, WebMode> = { auto: 'on', on: 'off', off: 'a
 
 export default function App() {
   const [lang, setLang] = useState<Lang>(deviceLang)
-  const [soru, setSoru] = useState('')
+  const [draft, setSoru] = useState('')
   const [messages, setMessages] = useState<Message[]>([])
   const [busy, setBusy] = useState(false)
   const [webMode, setWebMode] = useState<WebMode>('auto')
@@ -40,7 +40,7 @@ export default function App() {
   // pages read in this conversation; follow-up questions reuse them
   const pageCache = useRef(new Map<string, Page>())
   const engine = useMemo(() => ollamaEngine({ model: OLLAMA_MODEL, baseUrl: OLLAMA_URL }), [])
-  const bosMu = soru.trim() === ''
+  const isEmpty = draft.trim() === ''
   const t = strings[lang]
 
   // Open the chat store and continue the most recent conversation.
@@ -92,9 +92,9 @@ export default function App() {
     setConversations([])
   }
 
-  async function gonder() {
-    if (bosMu || busy) return
-    const question = soru.trim()
+  async function send() {
+    if (isEmpty || busy) return
+    const question = draft.trim()
     const id = Date.now()
     // Finished turns of this conversation, so follow-up questions have context.
     const history = messages
@@ -226,9 +226,9 @@ export default function App() {
         </Pressable>
         <TextInput
           style={styles.input}
-          value={soru}
+          value={draft}
           onChangeText={setSoru}
-          onSubmitEditing={gonder}
+          onSubmitEditing={send}
           placeholder={t.placeholder}
           placeholderTextColor={colors.textMuted}
         />
@@ -242,9 +242,9 @@ export default function App() {
           </Pressable>
         ) : (
           <Pressable
-            style={[styles.sendButton, bosMu && styles.sendButtonDisabled]}
-            onPress={gonder}
-            disabled={bosMu}
+            style={[styles.sendButton, isEmpty && styles.sendButtonDisabled]}
+            onPress={send}
+            disabled={isEmpty}
             accessibilityRole="button"
             accessibilityLabel={t.send}>
             <Icon name="arrowUp" size={20} color={colors.onAccent} />
