@@ -1,6 +1,15 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
-import { removeTcNumber, removePhones, hasEmail, removeEmails,removeIbans,sanitizeQuery} from './index.js'
+import {
+  removeTcNumber,
+  removePhones,
+  hasEmail,
+  removeEmails,
+  removeIbans,
+  removeCardNumbers,
+  removeInternationalPhones,
+  sanitizeQuery,
+} from './index.js'
 describe('removeTcNumber', () => {
 
   test('removes a TC number inside a sentence', () => {
@@ -211,5 +220,80 @@ describe('sanitizeQuery',() =>{
       sanitizeQuery('TR120006100519786457841326'),
       { text: '[IBAN removed]', removed: ['iban'] }
     )
+  })
+})
+
+describe('removeIbans (other countries)', () => {
+  test('removes a German IBAN', () => {
+    assert.equal(removeIbans('DE89 3704 0044 0532 0130 00 kime ait'), '[IBAN removed] kime ait')
+  })
+  test('removes a British IBAN with letters in it', () => {
+    assert.equal(removeIbans('GB29NWBK60161331926819'), '[IBAN removed]')
+  })
+  test('keeps an IBAN-like string with the wrong length for its country', () => {
+    assert.equal(removeIbans('DE89 3704 0044 0532 0130'), 'DE89 3704 0044 0532 0130')
+  })
+})
+
+describe('removeCardNumbers', () => {
+  test('removes a valid card number', () => {
+    assert.equal(removeCardNumbers('kart 4111 1111 1111 1111'), 'kart [card number removed]')
+  })
+  test('keeps a number that fails the Luhn check', () => {
+    assert.equal(removeCardNumbers('4111 1111 1111 1112'), '4111 1111 1111 1112')
+  })
+})
+
+describe('removeInternationalPhones', () => {
+  test('removes a number with a country code', () => {
+    assert.equal(removeInternationalPhones('call +44 20 7946 0958 now'), 'call [phone number removed] now')
+  })
+  test('keeps a short number after a plus sign', () => {
+    assert.equal(removeInternationalPhones('+5 degrees'), '+5 degrees')
+  })
+})
+
+describe('sanitizeQuery (Russian)', () => {
+  test('removes a Russian mobile number', () => {
+    assert.deepEqual(sanitizeQuery('чей номер +7 912 345-67-89', 'ru'), {
+      text: 'чей номер [phone number removed]',
+      removed: ['phone'],
+    })
+  })
+  test('removes a Russian number written with 8 and brackets', () => {
+    assert.equal(sanitizeQuery('8 (912) 345-67-89 кто это', 'ru').text, '[phone number removed] кто это')
+  })
+  test('removes a SNILS number', () => {
+    assert.equal(sanitizeQuery('СНИЛС 112-233-445 95', 'ru').text, 'СНИЛС [SNILS removed]')
+  })
+  test('removes a passport number', () => {
+    assert.equal(sanitizeQuery('паспорт 45 01 123456', 'ru').text, 'паспорт [passport number removed]')
+  })
+  test('removes an email with a Cyrillic name', () => {
+    assert.equal(sanitizeQuery('иван@mail.ru кто это', 'ru').text, '[email removed] кто это')
+  })
+  test('keeps a year in a Russian sentence', () => {
+    assert.deepEqual(sanitizeQuery('лучший телефон 2026 года', 'ru'), {
+      text: 'лучший телефон 2026 года',
+      removed: [],
+    })
+  })
+})
+
+describe('sanitizeQuery (English)', () => {
+  test('removes a social security number', () => {
+    assert.equal(sanitizeQuery('my SSN is 123-45-6789', 'en').text, 'my SSN is [SSN removed]')
+  })
+  test('removes a US phone number with brackets', () => {
+    assert.equal(sanitizeQuery('who owns (555) 123-4567', 'en').text, 'who owns [phone number removed]')
+  })
+  test('removes a Turkish number in English mode through the international rule', () => {
+    assert.equal(sanitizeQuery('who is +90 532 123 45 67', 'en').text, 'who is [phone number removed]')
+  })
+  test('keeps prices and short numbers', () => {
+    assert.deepEqual(sanitizeQuery('best phone under 1200 dollars, call 911', 'en'), {
+      text: 'best phone under 1200 dollars, call 911',
+      removed: [],
+    })
   })
 })

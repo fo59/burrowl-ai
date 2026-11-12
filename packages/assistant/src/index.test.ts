@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
-import { needsSearch, reply } from './index.js'
+import { needsSearch, reply, detectLanguage } from './index.js'
 
 describe('needsSearch', () => {
 
@@ -70,4 +70,75 @@ describe('reply', () => {
     assert.equal(reply('merhaba', 42).id, 42)
   })
 
+})
+
+describe('needsSearch (English)', () => {
+  test('needs search for "today"', () => {
+    assert.equal(needsSearch('what is the weather today', 'en'), true)
+  })
+  test('needs search for prices with a suffix', () => {
+    assert.equal(needsSearch('iphone prices in london', 'en'), true)
+  })
+  test('needs search for a money amount', () => {
+    assert.equal(needsSearch('best laptop under $1000', 'en'), true)
+  })
+  test('does not need search for a poem', () => {
+    assert.equal(needsSearch('write me a poem about the sea', 'en'), false)
+  })
+  test('does not treat the English word "son" as Turkish "son"', () => {
+    assert.equal(needsSearch('how do I teach my son to read', 'en'), false)
+  })
+})
+
+describe('needsSearch (Russian)', () => {
+  test('needs search for "сегодня"', () => {
+    assert.equal(needsSearch('какая погода сегодня', 'ru'), true)
+  })
+  test('needs search for an exchange rate', () => {
+    assert.equal(needsSearch('курс доллара', 'ru'), true)
+  })
+  test('needs search for rubles', () => {
+    assert.equal(needsSearch('телефон до 30000 руб', 'ru'), true)
+  })
+  test('does not need search for a poem', () => {
+    assert.equal(needsSearch('напиши стихотворение о море', 'ru'), false)
+  })
+  test('does not match a keyword inside another word', () => {
+    assert.equal(needsSearch('это бесценный опыт', 'ru'), false)
+  })
+})
+
+describe('needsSearch (mixed languages)', () => {
+  test('catches a Turkish question while the UI is in English', () => {
+    assert.equal(needsSearch('dolar bugün kaç TL', 'en'), true)
+  })
+  test('catches a Russian question while the UI is in Turkish', () => {
+    assert.equal(needsSearch('курс доллара', 'tr'), true)
+  })
+})
+
+describe('detectLanguage', () => {
+  test('detects Russian from Cyrillic letters', () => {
+    assert.equal(detectLanguage('привет', 'en'), 'ru')
+  })
+  test('detects Turkish from Turkish letters', () => {
+    assert.equal(detectLanguage('güzel bir gün', 'en'), 'tr')
+  })
+  test('falls back when the script is ambiguous', () => {
+    assert.equal(detectLanguage('hello', 'tr'), 'tr')
+  })
+})
+
+describe('reply (languages)', () => {
+  test('answers in the UI language', () => {
+    assert.equal(reply('write a poem', 1, 'en').text, 'I can answer this on the device. (coming soon)')
+  })
+  test('filters a Russian phone number from the query', () => {
+    const r = reply('чей номер +7 912 345-67-89 сегодня', 2, 'ru')
+    assert.equal(r.searchQuery, 'чей номер [phone number removed] сегодня')
+  })
+  test('applies Turkish privacy rules to Turkish text even in English mode', () => {
+    const r = reply('12345678901 kime ait bugün', 3, 'en')
+    assert.equal(r.searchQuery, '[TC number removed] kime ait bugün')
+  })
 })

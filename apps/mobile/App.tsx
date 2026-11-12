@@ -2,53 +2,71 @@ import { useState } from 'react'
 import { StatusBar } from 'expo-status-bar';
 import { colors } from './theme'
 import { Pressable, StyleSheet, Text, TextInput, View, ScrollView } from 'react-native'
-import { reply, Message } from '@burrowl/assistant'
+import { reply, LANGS, type Lang, type Message } from '@burrowl/assistant'
+import { strings, deviceLang } from './i18n'
 
 export default function App() {
+  const [lang, setLang] = useState<Lang>(deviceLang)
   const [soru, setSoru] = useState('')
   const bosMu = soru.trim() === ''
+  const t = strings[lang]
 
-  const [messages, setMessages] = useState<Message[]>([
-    { id: 1, role: 'user', text: 'Merhaba!' },
-    { id: 2, role: 'assistant', text: 'Merhaba, nasıl yardımcı olabilirim?' },
-  ])
+  const [messages, setMessages] = useState<Message[]>([])
 
   function gonder() {
     if (bosMu) return
     const yeni: Message = { id: Date.now(), role: 'user', text: soru.trim() }
-    const cevap = reply(soru, Date.now() + 1)
+    const cevap = reply(soru, Date.now() + 1, lang)
     setMessages([...messages, yeni, cevap])
     setSoru('')
   }
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Burrowl AI'a hoş geldin!</Text>
+      <View style={styles.header}>
+        <Text style={styles.title}>Burrowl AI</Text>
+        <View style={styles.langSwitch}>
+          {LANGS.map((l) => (
+            <Pressable
+              key={l}
+              onPress={() => setLang(l)}
+              style={[styles.langButton, l === lang && styles.langButtonActive]}>
+              <Text style={[styles.langText, l === lang && styles.langTextActive]}>
+                {l.toUpperCase()}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      </View>
 
       <ScrollView style={styles.messages} contentContainerStyle={styles.messagesContent}>
+        <View style={[styles.bubble, styles.assistantBubble]}>
+          <Text style={styles.assistantText}>{t.greeting}</Text>
+        </View>
         {messages.map((m) => (
           <View
             key={m.id}
             style={[styles.bubble, m.role === 'user' ? styles.userBubble : styles.assistantBubble]}>
-            {m.searchQuery && <Text style={styles.query}>🌐 Aranıyor: {m.searchQuery}</Text>}
+            {m.searchQuery && <Text style={styles.query}>🌐 {t.searching}: {m.searchQuery}</Text>}
             <Text style={m.role === 'user' ? styles.userText : styles.assistantText}>{m.text}</Text>
           </View>
         ))}
       </ScrollView>
       
-      <View style={styles.bottomBar}>  
-        <TextInput 
+      <View style={styles.bottomBar}>
+        <TextInput
           style={styles.input}
           value={soru}
           onChangeText={setSoru}
-          placeholder="Mesajınızı yazın..."
+          onSubmitEditing={gonder}
+          placeholder={t.placeholder}
           placeholderTextColor={colors.textMuted}
         />
-        <Pressable 
+        <Pressable
           style={[styles.button, bosMu && styles.buttonDisabled]}
-          onPress={gonder} 
+          onPress={gonder}
           disabled={bosMu}>
-          <Text style={styles.buttonText}>Gönder</Text>
+          <Text style={styles.buttonText}>{t.send}</Text>
         </Pressable>
       </View>
 
@@ -63,15 +81,46 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     paddingTop: 48,
   },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    marginBottom: 12,
+  },
   title: {
     color: colors.text,
     fontSize: 24,
     fontWeight: 'bold',
-    paddingHorizontal: 16,
-    marginBottom: 12,
+  },
+  langSwitch: {
+    flexDirection: 'row',
+    gap: 4,
+    padding: 3,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  langButton: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  langButtonActive: {
+    backgroundColor: colors.text,
+  },
+  langText: {
+    color: colors.textMuted,
+    fontWeight: 'bold',
+    fontSize: 12,
+  },
+  langTextActive: {
+    color: colors.background,
   },
   input: {
-    flex: 1, // Sabit width: 300 kaldırıldı, kalan tüm genişliği kaplar
+    flex: 1,
+    // On web a text input has an intrinsic width; without this it pushes the row off-screen.
+    minWidth: 0,
     padding: 12,
     borderWidth: 1,
     borderColor: colors.border,
