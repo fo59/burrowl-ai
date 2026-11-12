@@ -1,65 +1,58 @@
 import { useState } from 'react'
 import { StatusBar } from 'expo-status-bar';
-import { sanitizeQuery } from '@burrowl/privacy'
 import { colors } from './theme'
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
-import { needsSearch, Message } from '@burrowl/assistant'
-
-
+import { Pressable, StyleSheet, Text, TextInput, View, ScrollView } from 'react-native'
+import { reply, Message } from '@burrowl/assistant'
 
 export default function App() {
   const [soru, setSoru] = useState('')
-  const sonuc = sanitizeQuery(soru)
-  const arama = needsSearch(soru)
   const bosMu = soru.trim() === ''
 
   const [messages, setMessages] = useState<Message[]>([
     { id: 1, role: 'user', text: 'Merhaba!' },
     { id: 2, role: 'assistant', text: 'Merhaba, nasıl yardımcı olabilirim?' },
   ])
+
   function gonder() {
-    const cevap: Message = {
-      id: Date.now() + 1,
-      role: 'assistant',
-      text: arama
-        ? 'Bunun için internette arama yapmam gerekiyor. (yakında)'
-        : 'Bu soruyu cihazda cevaplayabilirim. (yakında)',
-    }
     if (bosMu) return
     const yeni: Message = { id: Date.now(), role: 'user', text: soru.trim() }
+    const cevap = reply(soru, Date.now() + 1)
     setMessages([...messages, yeni, cevap])
     setSoru('')
   }
 
   return (
-
     <View style={styles.container}>
       <Text style={styles.title}>Burrowl AI'a hoş geldin!</Text>
 
-      <TextInput style={styles.input}
-        value={soru}
-        onChangeText={setSoru}
-      />
-      {arama && <Text style={styles.badge}>🌐 Web araması gerekli</Text>}
-      <StatusBar style="auto" />
-      <Text style={styles.query}>Internete giden: {sonuc.text}</Text>
-      <Text style={styles.label}>Cikarilanlar: {sonuc.removed.join(',')}</Text>
+      <ScrollView style={styles.messages} contentContainerStyle={styles.messagesContent}>
+        {messages.map((m) => (
+          <View
+            key={m.id}
+            style={[styles.bubble, m.role === 'user' ? styles.userBubble : styles.assistantBubble]}>
+            {m.searchQuery && <Text style={styles.query}>🌐 Aranıyor: {m.searchQuery}</Text>}
+            <Text style={m.role === 'user' ? styles.userText : styles.assistantText}>{m.text}</Text>
+          </View>
+        ))}
+      </ScrollView>
+      
+      <View style={styles.bottomBar}>  
+        <TextInput 
+          style={styles.input}
+          value={soru}
+          onChangeText={setSoru}
+          placeholder="Mesajınızı yazın..."
+          placeholderTextColor={colors.textMuted}
+        />
+        <Pressable 
+          style={[styles.button, bosMu && styles.buttonDisabled]}
+          onPress={gonder} 
+          disabled={bosMu}>
+          <Text style={styles.buttonText}>Gönder</Text>
+        </Pressable>
+      </View>
 
-      {messages.map((m) => (
-        <Text
-          key={m.id}
-          style={[styles.bubble, m.role === 'user' ? styles.userBubble : styles.assistantBubble]}
-        >
-          {m.text}
-        </Text>
-      ))}
-
-      <Pressable style={[styles.button, bosMu && styles.buttonDisabled]}
-        onPress={gonder} disabled={bosMu}>
-        <Text>Gönder</Text>
-      </Pressable>
-
-
+      <StatusBar style='light' />
     </View>
   );
 }
@@ -68,17 +61,17 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 12,
+    paddingTop: 48,
   },
   title: {
     color: colors.text,
     fontSize: 24,
     fontWeight: 'bold',
+    paddingHorizontal: 16,
+    marginBottom: 12,
   },
   input: {
-    width: 300,
+    flex: 1, // Sabit width: 300 kaldırıldı, kalan tüm genişliği kaplar
     padding: 12,
     borderWidth: 1,
     borderColor: colors.border,
@@ -107,8 +100,10 @@ const styles = StyleSheet.create({
   button: {
     backgroundColor: colors.text,
     paddingHorizontal: 20,
-    paddingVertical: 10,
+    paddingVertical: 12,
     borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   buttonText: {
     color: colors.background,
@@ -121,17 +116,36 @@ const styles = StyleSheet.create({
     maxWidth: 280,
     padding: 12,
     borderRadius: 16,
+    gap: 6,
   },
   userBubble: {
     alignSelf: 'flex-end',
     backgroundColor: colors.text,
-    color: colors.background,
   },
   assistantBubble: {
     alignSelf: 'flex-start',
     backgroundColor: colors.card,
+  },
+  userText: {
+    color: colors.background,
+  },
+  assistantText: {
     color: colors.text,
   },
-
-
+  messages: {
+    flex: 1,
+    paddingHorizontal: 16,
+  },
+  messagesContent: {
+    gap: 8,
+    paddingVertical: 12,
+  },
+  bottomBar: {
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    padding: 16,
+    gap: 8,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
 });

@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
-import { needsSearch } from './index.js'
- 
+import { needsSearch, reply } from './index.js'
 
 describe('needsSearch', () => {
 
@@ -48,7 +47,27 @@ describe('needsSearch', () => {
   test('ignores a 5-digit number starting like a year', () => {
     assert.equal(needsSearch('20261 adet'), false)
   })
+})
 
-  return
+describe('reply', () => {
+  test('answers on the device when no search is needed', () => {
+    const r = reply('bana bir şiir yaz', 1)
+    assert.equal(r.role, 'assistant')
+    assert.equal(r.searchQuery, undefined)
+  })
+
+  test('includes the filtered query when search is needed', () => {
+    const r = reply('ali@gmail.com dolar bugün kaç TL', 2)
+    assert.equal(r.searchQuery, '[email removed] dolar bugün kaç TL')
+  })
+
+  test('never puts a phone number into the search query', () => {
+    const r = reply('0532 123 45 67 numaralı hattın fiyatı', 3)
+    assert.equal(r.searchQuery, '[phone number removed] numaralı hattın fiyatı')
+  })
+
+  test('uses the given id', () => {
+    assert.equal(reply('merhaba', 42).id, 42)
+  })
 
 })
