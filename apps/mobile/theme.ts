@@ -1,9 +1,9 @@
 // Burrowl AI brand palette (see proje_yeni_markarengi).
-// 90% graphite, white and greys; amber is the single accent, used sparingly.
+// 90% graphite, white and greys; violet is the single accent, used sparingly.
 export const brand = {
   graphite: '#1C1C1E',
   white: '#FFFFFF',
-  amber: '#F6C21A',
+  violet: '#9B8CFF',
   canvas: '#F5F5F7',
   ring: '#3A3A3C',
   textSecondary: '#8E8E93',
@@ -18,8 +18,8 @@ export const colors = {
   border: brand.ring,
   text: brand.white,
   textMuted: brand.textSecondary,
-  // Amber marks what leaves the device (the search query) and the "AI" wordmark.
-  accent: brand.amber,
+  // Violet marks what leaves the device (the search query) and the "AI" wordmark.
+  accent: brand.violet,
   onAccent: brand.graphite,
   danger: '#FF6961',
 } as const

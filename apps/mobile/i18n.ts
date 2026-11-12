@@ -2,28 +2,28 @@ import { LANGS, type Lang } from '@burrowl/assistant'
 
 export const strings: Record<Lang, {
   greeting: string
-  onDevice: string
+  slogan: string
   placeholder: string
   send: string
   searching: string
 }> = {
   tr: {
     greeting: 'Merhaba, nasıl yardımcı olabilirim?',
-    onDevice: 'Cihazda çalışır · hesap yok · sohbetler telefondan çıkmaz',
+    slogan: 'Sorduğun her şey sende kalır.',
     placeholder: 'Mesajınızı yazın...',
     send: 'Gönder',
     searching: 'Aranıyor',
   },
   en: {
     greeting: 'Hi, how can I help you?',
-    onDevice: 'Runs on your device · no account · chats never leave your phone',
+    slogan: 'Everything you ask stays with you.',
     placeholder: 'Type your message...',
     send: 'Send',
     searching: 'Searching',
   },
   ru: {
     greeting: 'Привет! Чем могу помочь?',
-    onDevice: 'Работает на устройстве · без аккаунта · чаты не покидают телефон',
+    slogan: 'Всё, что вы спрашиваете, остаётся с вами.',
     placeholder: 'Напишите сообщение...',
     send: 'Отправить',
     searching: 'Ищу',

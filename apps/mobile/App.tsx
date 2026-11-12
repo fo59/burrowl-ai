@@ -47,9 +47,9 @@ export default function App() {
         </View>
       </View>
 
-      <View style={styles.onDevice}>
+      <View style={styles.slogan}>
         <Icon name="shield" size={14} color={colors.textMuted} />
-        <Text style={styles.onDeviceText}>{t.onDevice}</Text>
+        <Text style={styles.sloganText}>{t.slogan}</Text>
       </View>
 
       <ScrollView style={styles.messages} contentContainerStyle={styles.messagesContent}>
@@ -146,14 +146,14 @@ const styles = StyleSheet.create({
   langTextActive: {
     color: colors.background,
   },
-  onDevice: {
+  slogan: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     paddingHorizontal: 16,
     paddingVertical: 10,
   },
-  onDeviceText: {
+  sloganText: {
     color: colors.textMuted,
     fontSize: 12,
   },
