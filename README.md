@@ -4,6 +4,13 @@
 
 > Status: working MVP. The app runs on Expo (web build for development) and uses a local [Ollama](https://ollama.com) model in place of the on-device engine. The phone engine (llama.cpp via `llama.rn`) is next.
 
+<p align="center">
+  <img src="docs/screenshots/facts.png" width="260" alt="Facts from Wikidata, live weather and exact math, each with its source">
+  <img src="docs/screenshots/privacy.png" width="260" alt="A phone number and an e-mail are removed before searching, and the user is told">
+  <img src="docs/screenshots/english.png" width="260" alt="English interface: a cited fact and a poem written by the on-device model">
+</p>
+<p align="center"><sub>Left: facts, weather and math come from tools, not from the model's memory. Middle: personal data never goes into the search, and the user is told what was removed. Right: the same app in English.</sub></p>
+
 ## Why
 
 Cloud assistants see everything you type. Burrowl keeps the model, the chat history and the reasoning on the device. Only a short search query leaves the phone, after personal data has been removed from it, and the user sees that query.

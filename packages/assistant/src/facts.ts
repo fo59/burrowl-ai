@@ -27,10 +27,10 @@ const KINDS: { kind: FactKind; properties: string[]; pattern: RegExp }[] = [
 
 // Words that are not part of the name. "ve/and/и" stay: "Savaş ve Barış".
 const FILLER = new Set([
-  'ne', 'nedir', 'neresi', 'nerede', 'kim', 'kimdir', 'kac', 'kactir', 'hangi', 'hangisi', 'mi', 'mu', 'midir',
+  'benim', 'ne', 'nedir', 'neresi', 'nerede', 'kim', 'kimdir', 'kac', 'kactir', 'hangi', 'hangisi', 'mi', 'mu', 'midir',
   'kadar', 'acaba', 'peki', 'bana', 'soyle', 'soyler', 'misin', 'lutfen', 'su', 'an', 'guncel', 'simdi', 'olan', 'en',
-  'what', 'whats', 'who', 'which', 'is', 'are', 'was', 'the', 'a', 'an', 'of', 'tell', 'me', 'please', 'current', 'now',
-  'что', 'кто', 'какая', 'какой', 'какое', 'какие', 'сколько', 'у', 'в', 'скажи', 'пожалуйста', 'сейчас', 'является',
+  'my', 'what', 'whats', 'who', 'which', 'is', 'are', 'was', 'the', 'a', 'an', 'of', 'tell', 'me', 'please', 'current', 'now',
+  'мой', 'моя', 'что', 'кто', 'какая', 'какой', 'какое', 'какие', 'сколько', 'у', 'в', 'скажи', 'пожалуйста', 'сейчас', 'является',
 ])
 
 // "Everest dağının yüksekliği": the kind of thing is not part of its name.
@@ -67,10 +67,13 @@ function valueOf(earlierAnswer: string | undefined): string | null {
 }
 
 export function factRequest(question: string, earlierAnswer?: string): FactRequest | null {
-  const text = stripSuffixes(question).replace(/[?!.,;:"«»()]/g, ' ')
+  const kindOf = (t: string) => KINDS.find((k) => new RegExp(`${B}(${k.pattern.source})`, 'u').test(foldTurkish(t)))
+  // "...yazıyorum, Kazakistanın başkenti neresi": only the clause that asks
+  const clause = stripSuffixes(question).split(/[,.;!?]/).find((c) => kindOf(c))
+  if (!clause) return null
+  const match = kindOf(clause)!
+  const text = clause.replace(/[:"«»()]/g, ' ')
   const folded = foldTurkish(text)
-  const match = KINDS.find((k) => new RegExp(`${B}(${k.pattern.source})`, 'u').test(folded))
-  if (!match) return null
 
   // Remove the property words and the filler; what is left is the name.
   // foldTurkish keeps positions, so the cut is made on the original spelling.

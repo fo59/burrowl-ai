@@ -16,6 +16,10 @@ export function evidenceCoverage(query: string, chunks: Chunk[]): number {
   const wanted = new Set(stems(query))
   if (wanted.size === 0) return 1
   const found = new Set(stems(chunks.map((c) => c.text).join(' ')))
+  // A name in the query ("Everest") must appear: pages that only share the
+  // common words ("dağı") are about something else.
+  const names = query.split(/\s+/).filter((w) => /^\p{Lu}/u.test(w)).flatMap((w) => stems(w))
+  if (names.some((n) => !found.has(n))) return 0
   let hits = 0
   for (const w of wanted) if (found.has(w)) hits++
   return hits / wanted.size

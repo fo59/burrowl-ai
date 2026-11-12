@@ -1,4 +1,4 @@
-import { LANGS, type Lang } from '@burrowl/privacy'
+import { sanitizeQuery, LANGS, type Lang } from '@burrowl/privacy'
 import {
   currentWeather,
   exchangeRates,
@@ -17,7 +17,7 @@ import {
 } from '@burrowl/web-search'
 import { chunkText, rankChunks, type Chunk } from '@burrowl/knowledge'
 import { ollamaEngine, type ChatMessage, type LlmEngine } from '@burrowl/llm-engine'
-import { LOCALES, detectLanguage } from './text.ts'
+import { LOCALES, detectLanguage, foldTurkish } from './text.ts'
 import {
   keywordQuery,
   recentHistory,
@@ -253,6 +253,25 @@ async function weatherAnswer(ctx: Context, places: string[]): Promise<Omit<Answe
   return { text: t.placeNotFound(places[0]), searchQuery: places[0], sources: [] }
 }
 
+// Personal data in the question, and the words that label it ("numaram
+// [phone]", "[phone] numaralı"): they only describe the data and pull searches
+// toward unrelated pages. `clean` is the question without both.
+function personalData(question: string, langs: Lang[]): { removed: string[]; labels: Set<string>; clean: string } {
+  const { text, removed } = sanitizeQuery(question, langs)
+  const PLACEHOLDER = String.raw`\[[^\]]*removed\]`
+  const labels = new Set(
+    [...text.matchAll(new RegExp(String.raw`(\p{L}+)\s+${PLACEHOLDER}|${PLACEHOLDER}\s+(\p{L}+)`, 'gu'))].map((m) =>
+      foldTurkish(m[1] ?? m[2]).slice(0, 5),
+    ),
+  )
+  const clean = text
+    .replace(new RegExp(PLACEHOLDER, 'g'), ' ')
+    .split(/\s+/)
+    .filter((w) => w && !labels.has(foldTurkish(w).slice(0, 5)))
+    .join(' ')
+  return { removed, labels, clean }
+}
+
 const UNITS: Record<string, string> = { Q11573: 'm', Q828224: 'km', Q712226: 'km²', Q174728: 'cm' }
 
 // Capital, population, author... read as data from Wikidata: no model, no prose
@@ -260,20 +279,22 @@ const UNITS: Record<string, string> = { Q11573: 'm', Q828224: 'km', Q712226: 'km
 async function factAnswer(ctx: Context): Promise<Omit<AnswerResult, 'intent'> | null> {
   const { question, lang, langs, options, t } = ctx
   const earlierAnswer = [...ctx.history].reverse().find((m) => m.role === 'assistant')?.content
-  const request = factRequest(question, earlierAnswer)
+  const personal = personalData(question, langs)
+  const request = factRequest(personal.clean, earlierAnswer)
   if (!request) return null
   const http = { ...options.http, signal: options.signal }
   // only the name goes out, filtered like every other query
   const subjects = request.subjects.map((s) => toOutgoingQuery(s, langs).query).filter(Boolean)
   if (subjects.length === 0) return null
-  options.onEvent?.({ type: 'search', query: subjects[0], removed: [] })
-
   const found = await Promise.all(subjects.map((s) => wikidataSearch(s, lang, http).catch(() => [] as WikidataEntity[])))
   // a name can end like a suffix (Berlin), so an exact label match wins over the first guess
   // and the other results follow ("Tesla" the unit has no founder, Tesla Motors does)
   const exact = subjects.flatMap((s, i) => found[i].filter((e) => plainName(e.label) === plainName(s)))
   const candidates = [...exact, ...(found.find((f) => f.length) ?? [])]
   const entities = candidates.filter((e, i) => candidates.findIndex((c) => c.id === e.id) === i)
+  // the forms of one word all go out; the one that matched is shown
+  const shown = subjects.find((s) => exact.some((e) => plainName(e.label) === plainName(s))) ?? subjects[0]
+  options.onEvent?.({ type: 'search', query: shown, removed: personal.removed })
   const fact = await wikidataFact(entities.slice(0, 6), request.properties, lang, http)
   if (!fact) return null
 
@@ -291,7 +312,8 @@ async function factAnswer(ctx: Context): Promise<Omit<AnswerResult, 'intent'> | 
   options.onEvent?.({ type: 'sources', sources })
   return {
     text: t.fact(fact.entity.label, t.factLabels[request.kind], values.join(', ')),
-    searchQuery: subjects[0],
+    searchQuery: shown,
+    removed: personal.removed,
     sources,
   }
 }
@@ -314,6 +336,14 @@ async function researchAnswer(
   }
   let outgoing = toOutgoingQuery(draft || keywordQuery(question), langs)
   if (!outgoing.query) outgoing = toOutgoingQuery(keywordQuery(question), langs)
+  // The rewrite may already have left personal data out; the user is still
+  // told what in their message was kept from the search.
+  const personal = personalData(question, langs)
+  outgoing.removed = [...new Set([...personal.removed, ...outgoing.removed])]
+  if (personal.labels.size) {
+    const kept = outgoing.query.split(' ').filter((w) => !personal.labels.has(foldTurkish(w).slice(0, 5)))
+    if (kept.length) outgoing.query = kept.join(' ')
+  }
   onEvent?.({ type: 'search', query: outgoing.query, removed: outgoing.removed })
 
   // 2. Search; if the model's wording finds nothing, try the plain keywords.
@@ -347,7 +377,9 @@ async function researchAnswer(
   const coverage = evidenceCoverage(outgoing.query, top)
   const base = { searchQuery: outgoing.query, removed: outgoing.removed, sources }
   if (top.length === 0 || coverage < (strict ? 1 : 0.5)) {
-    return { ...base, text: strict ? t.noReliableRecommendation : t.noReliableSource }
+    // unrelated pages are not shown as sources of an answer that has none
+    onEvent?.({ type: 'sources', sources: [] })
+    return { ...base, sources: [], text: strict ? t.noReliableRecommendation : t.noReliableSource }
   }
 
   // 5. Write from those passages only. Not streamed: the text is checked first.

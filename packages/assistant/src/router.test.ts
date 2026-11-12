@@ -112,6 +112,9 @@ describe('evidenceCoverage', () => {
     assert.ok(evidenceCoverage('2026 telefon', chunks) < 1)
     assert.equal(evidenceCoverage('Türkiye başkenti', [{ text: 'Ankara, Türkiye Cumhuriyetinin başkentidir.', source: 1 }]), 1)
   })
+  test('is zero when a name in the query is missing from the passages', () => {
+    assert.equal(evidenceCoverage('numara Everest dağı', [{ text: 'Uludağ, numara yazılı bir dağı andırır.', source: 1 }]), 0)
+  })
 })
 
 describe('keepVerifiedSentences', () => {
@@ -284,3 +287,35 @@ describe('answer (Wikidata facts)', () => {
     assert.equal(engine.calls.length, 0)
   })
 })
+
+describe('answer (personal data in a research question)', () => {
+  test('keeps the data and the words that label it out of the query, and says so', async () => {
+    const sent: { query: string; removed: string[] }[] = []
+    await answer('Benim numaram 0532 123 45 67, Everest dağı nerede bulunuyor?', 'tr', {
+      engine: fakeEngine((m) => (m[0].content.startsWith('You turn') ? 'numara Everest dağı' : 'cevap')),
+      providers: [],
+      http: { fetchImpl: async () => new Response('', { status: 404 }) },
+      onEvent: (e) => { if (e.type === 'search') sent.push({ query: e.query, removed: e.removed }) },
+    })
+    assert.deepEqual(sent.at(-1), { query: 'Everest dağı', removed: ['phone'] })
+  })
+})
+
+describe('rewriteQuery never sees personal data', () => {
+  test('an e-mail the model would mangle cannot reach the query', async () => {
+    const engine = fakeEngine('ali@gmail com Kazakistan başkenti')
+    const sent: string[] = []
+    await answer('ali@gmail.com adresimden yazıyorum, Kazakistan ekonomisi hakkında güncel haberler', 'tr', {
+      engine,
+      providers: [],
+      http: { fetchImpl: async () => new Response('', { status: 404 }) },
+      onEvent: (e) => { if (e.type === 'search') sent.push(e.query) },
+    })
+    assert.ok(!engine.calls[0][1].content.includes('ali'), 'the model did not get the address')
+    assert.ok(sent.every((q) => !q.includes('ali') && !q.includes('gmail')), sent.join(' | '))
+  })
+  test('a fact question after a personal clause uses only the asking clause', () => {
+    assert.ok(factRequest('yazıyorum, Kazakistanın başkenti neresi')?.subjects.includes('Kazakistan'))
+  })
+})
+

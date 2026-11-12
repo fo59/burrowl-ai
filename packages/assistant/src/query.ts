@@ -1,4 +1,4 @@
-import { sanitizeQuery, type Lang } from '@burrowl/privacy'
+import { sanitizeQuery, LANGS, type Lang } from '@burrowl/privacy'
 import { terms } from '@burrowl/knowledge'
 import type { ChatMessage, LlmEngine } from '@burrowl/llm-engine'
 import { B, E, foldTurkish, stripSuffixes } from './text.ts'
@@ -32,7 +32,8 @@ export function keywordQuery(question: string): string {
 // out. The user is shown exactly this string.
 export function toOutgoingQuery(query: string, langs: Lang[]): { query: string; removed: string[] } {
   const { text, removed } = sanitizeQuery(query, langs)
-  const kept = text.replace(/\[[^\]]*removed\]/g, ' ').split(/\s+/).filter(Boolean)
+  // a word with "@" is part of an address the rules did not recognise: never sent
+  const kept = text.replace(/\[[^\]]*removed\]/g, ' ').split(/\s+/).filter((w) => w && !w.includes('@'))
   // Small models ignore "3 to 6 keywords" and write sentences, which search
   // engines do not match. Cut after filtering so removed data does not use up words.
   return { query: kept.slice(0, 6).join(' '), removed }
@@ -70,6 +71,11 @@ export async function rewriteQuery(
   earlier: EarlierTurn | null,
   signal?: AbortSignal,
 ): Promise<string> {
+  // The model never sees personal data: it rewrites "ali@gmail.com" into forms
+  // ("ali@gmail com") that the filter would no longer recognise afterwards.
+  const safe = (text: string) => sanitizeQuery(text, LANGS).text.replace(/\[[^\]]*removed\]/g, ' ').replace(/\s+/g, ' ').trim()
+  question = safe(question)
+  if (earlier) earlier = { question: safe(earlier.question), ...(earlier.answer ? { answer: safe(earlier.answer) } : {}) }
   const content = earlier
     ? [
         `${EARLIER_LABEL[lang]}: ${earlier.question}`,
