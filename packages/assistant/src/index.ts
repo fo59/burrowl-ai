@@ -95,13 +95,44 @@ export function detectLanguage(text: string, fallback: Lang): Lang {
   return fallback
 }
 
+// Questions that ask for a fact. A small on-device model's own knowledge is
+// often outdated or wrong (it named Almaty as Kazakhstan's capital), so facts
+// come from sources, not from the model's memory.
+const FACT_QUESTION = new RegExp(
+  `${B}(${[
+    // tr (folded)
+    'kim', 'kimdir', 'kimin', 'nerede', 'neresi', 'nereye', 'nedir', 'ne zaman', 'kac', 'kactir', 'hangi', 'hangisi',
+    'nufus', 'baskent', 'yuzolcum', 'yuksekli', 'uzunlu', 'kurucu', 'yazari', 'yonetmen',
+    // en
+    'who', 'whom', 'whose', 'where', 'when', 'which', 'what is', 'what are', 'what was', 'how many', 'how much',
+    'how tall', 'how long', 'how far', 'how old', 'population', 'capital',
+    // ru
+    'кто', 'где', 'когда', 'сколько', 'какой', 'какая', 'какое', 'какие', 'что такое', 'столиц', 'население',
+  ].join('|')})${E}`,
+  'iu',
+)
+
+// Things the model answers well on its own: arithmetic, writing, translating,
+// small talk and the date (which it is given).
+const NO_SEARCH = new RegExp(
+  [
+    String.raw`\d+\s*(x|\*|\+|-|/|carpi|bolu|arti|eksi|times|plus|minus|divided by|умнож\S*|плюс|минус|раздел\S*)\s*(на\s*|by\s*)?\d+`,
+    String.raw`${B}(siir|hikaye|masal|sarki|mektup|poem|story|song|letter|стих\S*|рассказ\S*|сказк\S*|песн\S*|письм\S*)${E}`,
+    String.raw`${B}(cevir|translate|перевед\S*|переведи)`,
+    String.raw`${B}(hangi yil|hangi gun|hangi ay|saat kac|what (day|year|time) is|который час|какой сегодня (день|год))`,
+  ].join('|'),
+  'iu',
+)
+
 export function needsSearch(question: string, uiLang: Lang = 'tr'): boolean {
   if (yearPattern.test(question) || moneyPattern.test(question)) return true
   const folded = foldTurkish(question)
   if (prefixPattern.test(folded)) return true
 
   const langs = new Set([uiLang, detectLanguage(question, uiLang)])
-  return [...langs].some((l) => wordPatterns[l]?.test(folded) ?? false)
+  if ([...langs].some((l) => wordPatterns[l]?.test(folded) ?? false)) return true
+
+  return FACT_QUESTION.test(folded) && !NO_SEARCH.test(folded)
 }
 
 export interface Source {
@@ -155,6 +186,7 @@ export function reply(question: string, id: number, uiLang: Lang = 'tr'): Messag
 const QUESTION_WORDS = new Set([
   // tr
   'ne', 'neler', 'nedir', 'nasıl', 'kaç', 'kim', 'kimdir', 'hangi', 'hangisi', 'mi', 'mı', 'mu', 'mü',
+  'neresi', 'nerede', 'nereye', 'peki', 'onun', 'eder',
   'midir', 'mıdır', 'acaba', 'lütfen', 'bana', 'söyle', 'söyler', 'misin', 'anlat', 'merak', 'ediyorum', 'bir',
   've', 'ile', 'için', 'bu', 'şu', 'da', 'de',
   // en
@@ -166,8 +198,13 @@ const QUESTION_WORDS = new Set([
 ])
 
 // Fallback query when the model cannot be used: the question minus question words.
+// "Türkiye'nin" → "Türkiye": the suffix after an apostrophe only hurts searching.
+export function stripSuffixes(text: string): string {
+  return text.replace(/(\p{L})['’]\p{L}+/gu, '$1')
+}
+
 export function keywordQuery(question: string): string {
-  return question
+  return stripSuffixes(question)
     .split(/[^\p{L}\p{N}$€£₺₽%.,-]+/u)
     .map((w) => w.replace(/^[.,-]+|[.,-]+$/g, ''))
     .filter((w) => w && !QUESTION_WORDS.has(w.toLocaleLowerCase()))
@@ -192,26 +229,37 @@ function rewritePrompt(lang: Lang): string {
     'You turn a user question into a short web search query. Rules: 3 to 6 keywords, ' +
     `written in ${LANGUAGE_NAMES[lang]} (never translate), leave out names of private people ` +
     '(relatives, friends), phone numbers, e-mails and ID numbers, no punctuation or explanation. ' +
-    'Output only the query.'
+    'If the question refers back with a word like "it", "its", "there", "onun", "orası", "его" or "там", ' +
+    'use the thing named in the earlier answer. Output only the query.'
   )
 }
 
 const EARLIER_LABEL: Record<Lang, string> = { tr: 'Önceki soru', en: 'Earlier question', ru: 'Предыдущий вопрос' }
+const EARLIER_ANSWER_LABEL: Record<Lang, string> = { tr: 'Önceki cevap', en: 'Earlier answer', ru: 'Предыдущий ответ' }
 const QUESTION_LABEL: Record<Lang, string> = { tr: 'Soru', en: 'Question', ru: 'Вопрос' }
+
+// Earlier turn a follow-up question refers to.
+export interface EarlierTurn {
+  question: string
+  // first sentence of the earlier answer, only when it cited sources
+  answer?: string
+}
+
+const stems = (text: string) => terms(foldTurkish(stripSuffixes(text)))
 
 async function rewriteQuery(
   question: string,
   lang: Lang,
   engine: LlmEngine,
-  // the previous question, only when this one is a follow-up of it
-  earlier: string | null,
+  earlier: EarlierTurn | null,
   signal?: AbortSignal,
 ): Promise<string> {
-  // Only the user's own words are given: feeding back the model's earlier
-  // answers turns one made-up product name into the next search. And only for
-  // follow-ups, otherwise small models mix up the topics.
   const content = earlier
-    ? `${EARLIER_LABEL[lang]}: ${earlier}\n${QUESTION_LABEL[lang]}: ${question}`
+    ? [
+        `${EARLIER_LABEL[lang]}: ${earlier.question}`,
+        ...(earlier.answer ? [`${EARLIER_ANSWER_LABEL[lang]}: ${earlier.answer}`] : []),
+        `${QUESTION_LABEL[lang]}: ${question}`,
+      ].join('\n')
     : question
   const out = await engine.generate(
     [
@@ -220,22 +268,23 @@ async function rewriteQuery(
     ],
     { signal, temperature: 0, maxTokens: 24 },
   )
-  const asked = earlier ? `${earlier} ${question}` : question
-  // Numbers the user did not write are the model's guesses (a made-up year);
-  // they must not end up in the query.
-  const askedNumbers = new Set(asked.match(/\d+/g) ?? [])
-  const query = out
-    .split('\n')[0]
-    .replace(/["'«»“”?!:;]/g, ' ')
+
+  // The model only chooses which of the conversation's words to keep (it drops
+  // names and filler); it cannot add words. Small models otherwise put their
+  // guessed answer ("... başkenti Ankara'dır") or a translation into the query,
+  // which finds the wrong pages.
+  const allowed = new Set(stems([question, earlier?.question ?? '', earlier?.answer ?? ''].join(' ')))
+  const seen = new Set<string>()
+  const words = stripSuffixes(out.split('\n')[0])
+    .replace(/["«»“”?!:;.,()]/g, ' ')
     .split(/\s+/)
-    .filter((w) => w && (!/^\d+$/.test(w) || askedNumbers.has(w)))
-    .filter((w) => !QUESTION_WORDS.has(foldTurkish(w)) && !QUESTION_WORDS.has(w.toLocaleLowerCase()))
-    .join(' ')
-    .trim()
-  // A query that shares no word with the conversation (e.g. the model translated
-  // it) finds the wrong pages; the keyword fallback is safer then.
-  const askedTerms = new Set(terms(asked))
-  return terms(query).some((t) => askedTerms.has(t)) ? query : ''
+    .filter((w) => {
+      const [stem] = stems(w)
+      if (!stem || !allowed.has(stem) || seen.has(stem)) return false
+      seen.add(stem)
+      return true
+    })
+  return words.join(' ')
 }
 
 const ANSWER_RULES: Record<Lang, { base: string; withSources: string; noSources: string; sourcesLabel: string; questionLabel: string }> = {
@@ -317,16 +366,22 @@ export function recentHistory(history: ChatMessage[], turns = 3): ChatMessage[] 
 }
 
 const FOLLOW_UP = new RegExp(
-  `${B}(bu|bunu|bunlar|bunun|o|onu|peki|daha|baska|yeni|yenisi|guncel|eski|diger|that|this|it|more|other|newer|another|это|его|ещё|еще|другой|новее)${E}`,
+  `${B}(bu|bunu|bunlar|bunun|o|onu|onun|orasi|oranin|peki|daha|baska|yeni|yenisi|guncel|eski|diger|that|this|it|its|there|more|other|newer|another|это|его|её|ее|там|ещё|еще|другой|новее)${E}`,
   'iu',
 )
 
 // A follow-up like "isn't that old?" needs fresh information when the question
 // before it did.
-function searchFollowUpOf(question: string, history: ChatMessage[], uiLang: Lang): string | null {
-  const previous = [...history].reverse().find((m) => m.role === 'user')
-  if (!previous || question.split(/\s+/).length > 10 || !FOLLOW_UP.test(foldTurkish(question))) return null
-  return needsSearch(`${previous.content} ${question}`, uiLang) ? previous.content : null
+function searchFollowUpOf(question: string, history: ChatMessage[], uiLang: Lang): EarlierTurn | null {
+  const at = history.map((m) => m.role).lastIndexOf('user')
+  if (at < 0 || question.split(/\s+/).length > 10 || !FOLLOW_UP.test(foldTurkish(question))) return null
+  const previous = history[at].content
+  if (!needsSearch(`${previous} ${question}`, uiLang)) return null
+  // A cited answer came from sources; an uncited one may be made up and must
+  // not steer the next search.
+  const reply = history[at + 1]?.content ?? ''
+  const firstSentence = reply.split(/(?<=[.!?])\s/)[0]?.slice(0, 200)
+  return { question: previous, ...(/\[\d+\]/.test(reply) && firstSentence ? { answer: firstSentence } : {}) }
 }
 
 export type AnswerEvent =
@@ -398,6 +453,9 @@ export async function answer(question: string, uiLang: Lang, options: AnswerOpti
       results = await searchAll(providers, fallback, { lang, limit: 4, signal })
     }
   }
+  // An official exchange rate answers a rate question on its own; encyclopedia
+  // pages next to it are full of old rates that a small model mixes up.
+  if (results.some((r) => r.provider === 'rates')) results = results.filter((r) => r.provider === 'rates')
   const sources: Source[] = results.map((r, i) => ({ n: i + 1, title: r.title, url: r.url }))
   onEvent?.({ type: 'sources', sources })
 

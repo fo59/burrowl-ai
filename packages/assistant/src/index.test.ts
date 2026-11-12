@@ -234,7 +234,7 @@ describe('answer', () => {
       engine,
       providers: [provider({ A: 'Numara sahibi hakkında uzun bir açıklama metni burada yer alıyor.' }, queries)],
     })
-    assert.equal(queries[0], 'numara sahibi bugün')
+    assert.equal(queries[0], 'numara bugün')
     assert.deepEqual(result.removed, ['phone'])
   })
 
@@ -272,7 +272,7 @@ describe('answer (query hygiene)', () => {
       engine,
       providers: [provider({ İstanbul: 'İstanbul hakkında yeterince uzun bir açıklama metni burada.' }, queries)],
     })
-    assert.equal(queries[0], 'İstanbul nüfusu yılına göre')
+    assert.equal(queries[0], 'İstanbul nüfusu göre')
   })
 })
 
@@ -376,7 +376,7 @@ describe('answer (prompt hygiene)', () => {
     })
     const rewriteCall = engine.calls[0]
     assert.ok(rewriteCall.every((m) => !m.content.includes('Excalibur')))
-    assert.match(rewriteCall[1].content, /Önceki soru: telefon oner\nSoru: bugun daha yenisi var mi/)
+    assert.equal(rewriteCall[1].content, 'Önceki soru: telefon oner\nSoru: bugun daha yenisi var mi')
   })
 })
 
@@ -402,6 +402,82 @@ describe('dropInvalidCitations', () => {
   test('removes citations to sources that do not exist', () => {
     assert.equal(dropInvalidCitations('Model S Plaid [3]', 0), 'Model S Plaid')
     assert.equal(dropInvalidCitations('A [1], B [4].', 2), 'A [1], B.')
+  })
+})
+
+describe('needsSearch (fact questions)', () => {
+  test('searches for facts instead of trusting the model\'s memory', () => {
+    assert.equal(needsSearch("İstanbul'un nüfusu kaç?", 'tr'), true)
+    assert.equal(needsSearch('Какая столица Казахстана?', 'ru'), true)
+    assert.equal(needsSearch('Who wrote War and Peace?', 'en'), true)
+    assert.equal(needsSearch('Everest Dağı ne kadar yüksek, yüksekliği kaç metre', 'tr'), true)
+  })
+  test('does not search for arithmetic, even with "kaç"', () => {
+    assert.equal(needsSearch('12 çarpı 7 kaç eder', 'tr'), false)
+    assert.equal(needsSearch('how much is 15 times 4', 'en'), false)
+  })
+  test('does not search for the date (the model is given it)', () => {
+    assert.equal(needsSearch('şu an hangi yıldayız', 'tr'), false)
+  })
+  test('does not search for writing requests', () => {
+    assert.equal(needsSearch('kim olduğumu anlatan bir şiir yaz', 'tr'), false)
+  })
+  test('handles Russian arithmetic, poems, stories and translations', () => {
+    assert.equal(needsSearch('сколько будет 5 умножить на 3', 'ru'), false)
+    assert.equal(needsSearch('какой стих написал бы Пушкин, напиши стихотворение', 'ru'), false)
+    assert.equal(needsSearch('какую сказку расскажешь', 'ru'), false)
+    assert.equal(needsSearch('переведи, какое это слово', 'ru'), false)
+  })
+  test('does not search for small talk', () => {
+    assert.equal(needsSearch('nasılsın, ne yapıyorsun', 'tr'), false)
+    assert.equal(needsSearch('thanks, that was helpful', 'en'), false)
+  })
+})
+
+describe('answer (query is chosen from the conversation\'s words)', () => {
+  test('drops the answer a small model writes into the query', async () => {
+    const queries: string[] = []
+    const engine = fakeEngine((m) =>
+      m[0].content.startsWith('You turn') ? "Türkiye'nin başkenti Ankara'dır." : 'cevap',
+    )
+    await answer("Türkiye'nin başkenti neresi?", 'tr', {
+      engine,
+      providers: [provider({ Ankara: 'Ankara Türkiyenin başkentidir ve İç Anadoluda yer alır.' }, queries)],
+    })
+    assert.equal(queries[0], 'Türkiye başkenti')
+  })
+
+  test('uses a cited earlier answer to understand a follow-up', async () => {
+    const engine = fakeEngine((m) => (m[0].content.startsWith('You turn') ? 'Paris nüfusu' : 'cevap'))
+    await answer('peki onun nüfusu kaç', 'tr', {
+      engine,
+      history: [
+        { role: 'user', content: "Fransa'nın başkenti neresi?" },
+        { role: 'assistant', content: "Fransa'nın başkenti Paris'tir [1]. Ülkenin en büyük şehridir." },
+      ],
+      providers: [provider({ Paris: 'Paris hakkında yeterince uzun bir açıklama metni burada.' })],
+    })
+    assert.match(engine.calls[0][1].content, /Önceki cevap: Fransa'nın başkenti Paris'tir \[1\]\./)
+  })
+
+  test('strips Turkish suffixes after an apostrophe', () => {
+    assert.equal(keywordQuery("Türkiye'nin başkenti neresi?"), 'Türkiye başkenti')
+  })
+})
+
+describe('answer (exchange rates)', () => {
+  test('uses only the official rate when one was found', async () => {
+    const rates: SearchProvider = {
+      name: 'rates',
+      search: async () => [{ title: 'USD/TRY (ECB)', url: 'r', snippet: '', provider: 'rates' }],
+      read: async (r) => ({ title: r.title, url: r.url, text: '1 USD = 50.25 TRY on 2026-11-11.' }),
+    }
+    const engine = fakeEngine((m) => (m[0].content.startsWith('You turn') ? 'dolar kuru TL' : 'cevap'))
+    const result = await answer('dolar kuru kaç TL', 'tr', {
+      engine,
+      providers: [rates, provider({ Döviz: '2015 yılında 1 USD 2,887 TL idi; kurlar yıllar içinde değişti.' })],
+    })
+    assert.deepEqual(result.sources.map((s) => s.title), ['USD/TRY (ECB)'])
   })
 })
 
