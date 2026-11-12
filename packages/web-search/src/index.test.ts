@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 import {
+  wikidataFact,
+  wikidataSearch,
+  currentWeather,
+  fetchRate,
+  geocode,
+  rateRequest,
   currenciesIn,
   exchangeRates,
   extractText,
@@ -194,6 +200,112 @@ describe('readPages (cache)', () => {
     const again = await readPages(results, [provider], { lang: 'tr', cache })
     assert.equal(reads, 1)
     assert.equal(again[0].text, 'metin')
+  })
+})
+
+describe('fetchRate', () => {
+  test('returns the official rate as data', async () => {
+    const rate = await fetchRate({ base: 'USD', target: 'TRY' }, {
+      fetchImpl: fakeFetch({ frankfurter: { date: '2026-11-11', rates: { TRY: 50.2588 } } }),
+    })
+    assert.deepEqual(rate, {
+      kind: 'rate', base: 'USD', target: 'TRY', rate: 50.2588, date: '2026-11-11',
+      url: 'https://api.frankfurter.dev/v1/latest?base=USD&symbols=TRY',
+    })
+  })
+  test('knows the rouble is not published', async () => {
+    const rate = await fetchRate({ base: 'TRY', target: 'RUB' }, { fetchImpl: fakeFetch({}) })
+    assert.equal(rate?.kind, 'unpublished')
+  })
+  test('reads the pair from a question', () => {
+    assert.deepEqual(rateRequest('dolar kaç TL', 'tr'), { base: 'USD', target: 'TRY' })
+    assert.equal(rateRequest('iphone fiyatı', 'tr'), null)
+  })
+})
+
+describe('geocode', () => {
+  const results = {
+    results: [
+      { name: 'Kazan', country: 'Türkiye', latitude: 40.2, longitude: 32.7, population: 23889 },
+      { name: 'Kazan', country: 'Rusya', latitude: 55.8, longitude: 49.1, population: 1243500 },
+      { name: 'Kazanlak', country: 'Bulgaristan', latitude: 42.6, longitude: 25.4, population: 50000 },
+    ],
+  }
+  test('picks the largest place with exactly that name', async () => {
+    const place = await geocode('Kazan', 'tr', { fetchImpl: fakeFetch({ geocoding: results }) })
+    assert.equal(place?.country, 'Rusya')
+  })
+  test('matches İstanbul when typed as Istanbul', async () => {
+    const place = await geocode('Istanbul', 'tr', {
+      fetchImpl: fakeFetch({ geocoding: { results: [{ name: 'İstanbul', country: 'Türkiye', latitude: 41, longitude: 29, population: 15000000 }] } }),
+    })
+    assert.equal(place?.name, 'İstanbul')
+  })
+  test('rejects places that only look similar', async () => {
+    const place = await geocode('Москве', 'ru', {
+      fetchImpl: fakeFetch({ geocoding: { results: [{ name: 'Москверо', latitude: 35, longitude: -103 }] } }),
+    })
+    assert.equal(place, null)
+  })
+})
+
+describe('currentWeather', () => {
+  test('returns the current conditions as data', async () => {
+    const weather = await currentWeather(
+      { name: 'Moskova', country: 'Rusya', latitude: 55.75, longitude: 37.62, population: 1 },
+      {
+        fetchImpl: fakeFetch({
+          forecast: { current: { time: '2026-11-12T20:15', temperature_2m: 1.5, apparent_temperature: -0.9, weather_code: 3, wind_speed_10m: 2.3 } },
+        }),
+      },
+    )
+    assert.equal(weather.temperature, 1.5)
+    assert.equal(weather.code, 3)
+    assert.match(weather.url, /latitude=55\.75/)
+  })
+})
+
+describe('wikidata', () => {
+  const routes = {
+    wbsearchentities: { search: [{ id: 'Q43', label: 'Türkiye', description: 'Batı Asya ülkesi' }] },
+    'property=P36': {
+          claims: {
+            P36: [{ rank: 'normal', mainsnak: { datavalue: { type: 'wikibase-entityid', value: { id: 'Q3640' } } } }],
+          },
+    },
+    'property=P1082': {
+          claims: {
+            P1082: [
+              { rank: 'normal', mainsnak: { datavalue: { type: 'quantity', value: { amount: '+84680273', unit: '1' } } }, qualifiers: { P585: [{ datavalue: { value: { time: '+2021-12-31T00:00:00Z' } } }] } },
+              { rank: 'normal', mainsnak: { datavalue: { type: 'quantity', value: { amount: '+85372377', unit: '1' } } }, qualifiers: { P585: [{ datavalue: { value: { time: '+2023-12-31T00:00:00Z' } } }] } },
+            ],
+          },
+    },
+    'property=P50': { claims: {} },
+    'ids=Q3640&props=labels': { entities: { Q3640: { labels: { tr: { value: 'Ankara' } } } } },
+  }
+
+  test('finds an entity even when typed without Turkish letters', async () => {
+    const found = await wikidataSearch('Turkiye', 'tr', { fetchImpl: fakeFetch(routes) })
+    assert.equal(found[0].id, 'Q43')
+  })
+
+  test('reads an item value with its label', async () => {
+    const http = { fetchImpl: fakeFetch(routes) }
+    const fact = await wikidataFact([{ id: 'Q43', label: 'Türkiye', description: '' }], ['P36'], 'tr', http)
+    assert.deepEqual(fact?.values, [{ kind: 'item', id: 'Q3640', label: 'Ankara' }])
+    assert.equal(fact?.url, 'https://www.wikidata.org/wiki/Q43')
+  })
+
+  test('takes the most recent population', async () => {
+    const http = { fetchImpl: fakeFetch(routes) }
+    const fact = await wikidataFact([{ id: 'Q43', label: 'Türkiye', description: '' }], ['P1082'], 'tr', http)
+    assert.deepEqual(fact?.values, [{ kind: 'quantity', amount: 85372377, unit: null, date: '2023-12-31' }])
+  })
+
+  test('returns null when no entity has the property', async () => {
+    const http = { fetchImpl: fakeFetch(routes) }
+    assert.equal(await wikidataFact([{ id: 'Q43', label: 'Türkiye', description: '' }], ['P50'], 'tr', http), null)
   })
 })
 

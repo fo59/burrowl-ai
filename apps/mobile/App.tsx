@@ -100,6 +100,11 @@ export default function App() {
     const history = messages
       .filter((m) => m.text && (m.role === 'user' || m.status === 'done'))
       .map((m) => ({ role: m.role, content: m.text }))
+    // what the previous answer actually did, for "did you use the internet?"
+    const previous = [...messages].reverse().find((m) => m.role === 'assistant' && m.status === 'done')
+    const lastTurn = previous
+      ? { searchQuery: previous.searchQuery, sources: previous.sources?.length ?? 0, removed: previous.removed ?? [] }
+      : null
 
     const userMessage: Message = { id, role: 'user', text: question }
     let reply: Message = { id: id + 1, role: 'assistant', text: '', status: 'thinking' }
@@ -127,6 +132,7 @@ export default function App() {
       const result = await answer(question, lang, {
         engine,
         history,
+        lastTurn,
         web: webMode,
         signal: abort.signal,
         pageCache: pageCache.current,

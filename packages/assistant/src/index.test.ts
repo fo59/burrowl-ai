@@ -213,14 +213,13 @@ describe('answer', () => {
       engine,
       providers: [provider({ İstanbul: 'İstanbul Türkiyenin en kalabalık şehridir. Nüfusu 2023 itibarıyla 15,7 milyondur.' })],
       onEvent: (e) => events.push(e),
+      http: offline, // no Wikidata: this tests the search-and-read path
     })
     assert.equal(result.searchQuery, 'İstanbul nüfusu 2026')
     assert.deepEqual(result.sources, [{ n: 1, title: 'İstanbul', url: 'https://x/İstanbul' }])
     assert.equal(result.text, 'İstanbulun nüfusu 15,7 milyondur [1].')
-    assert.deepEqual(
-      [...new Set(events.map((e) => e.type))],
-      ['search', 'sources', 'read', 'writing', 'token'],
-    )
+    // researched answers are checked before they are shown, so they are not streamed
+    assert.deepEqual([...new Set(events.map((e) => e.type))], ['search', 'sources', 'read', 'writing'])
     // the model only sees the selected passage, marked as a source
     assert.match(engine.calls[1][1].content, /\[1\] İstanbul: .*15,7 milyon/)
   })
@@ -250,15 +249,16 @@ describe('answer', () => {
         return 'ok'
       },
     }
-    await answer('dolar bugün kaç TL', 'tr', { engine, providers: [provider({ Dolar: 'Dolar kuru hakkında yeterince uzun bir metin.' }, queries)] })
-    assert.equal(queries[0], 'dolar bugün TL')
+    await answer('bugün borsa ne durumda', 'tr', { engine, providers: [provider({ Borsa: 'Borsa bugün hakkında yeterince uzun bir metin.' }, queries)] })
+    assert.equal(queries[0], 'bugün borsa durumda')
   })
 
-  test('tells the model when no source was found', async () => {
-    const engine = fakeEngine((messages) => (messages[0].content.startsWith('You turn') ? 'xyz' : 'kaynak yok'))
+  test('says it found nothing instead of asking the model to guess', async () => {
+    const engine = fakeEngine((messages) => (messages[0].content.startsWith('You turn') ? 'xyz' : 'uydurma cevap'))
     const result = await answer('bugün xyz', 'tr', { engine, providers: [provider({})] })
     assert.deepEqual(result.sources, [])
-    assert.match(engine.calls[engine.calls.length - 1][0].content, /kaynak bulunamadı/)
+    assert.match(result.text, /güvenilir bir kaynakta cevap bulamadım/)
+    assert.equal(engine.calls.length, 1, 'only the query was written; no answer was generated')
   })
 })
 
@@ -443,6 +443,7 @@ describe('answer (query is chosen from the conversation\'s words)', () => {
     await answer("Türkiye'nin başkenti neresi?", 'tr', {
       engine,
       providers: [provider({ Ankara: 'Ankara Türkiyenin başkentidir ve İç Anadoluda yer alır.' }, queries)],
+      http: offline,
     })
     assert.equal(queries[0], 'Türkiye başkenti')
   })
@@ -466,18 +467,17 @@ describe('answer (query is chosen from the conversation\'s words)', () => {
 })
 
 describe('answer (exchange rates)', () => {
-  test('uses only the official rate when one was found', async () => {
-    const rates: SearchProvider = {
-      name: 'rates',
-      search: async () => [{ title: 'USD/TRY (ECB)', url: 'r', snippet: '', provider: 'rates' }],
-      read: async (r) => ({ title: r.title, url: r.url, text: '1 USD = 50.25 TRY on 2026-11-11.' }),
+  test('answers from the official rate without the model', async () => {
+    const engine = fakeEngine('kullanılmamalı')
+    const http = {
+      fetchImpl: async () => new Response(JSON.stringify({ date: '2026-11-11', rates: { TRY: 50.2588 } })),
     }
-    const engine = fakeEngine((m) => (m[0].content.startsWith('You turn') ? 'dolar kuru TL' : 'cevap'))
-    const result = await answer('dolar kuru kaç TL', 'tr', {
-      engine,
-      providers: [rates, provider({ Döviz: '2015 yılında 1 USD 2,887 TL idi; kurlar yıllar içinde değişti.' })],
-    })
-    assert.deepEqual(result.sources.map((s) => s.title), ['USD/TRY (ECB)'])
+    const result = await answer('dolar kuru kaç TL', 'tr', { engine, http })
+    assert.equal(result.intent, 'currency')
+    assert.match(result.text, /^1 USD = 50,2588 TRY/)
+    assert.equal(result.sources[0].title, 'Avrupa Merkez Bankası referans kuru')
+    assert.equal(engine.calls.length, 0)
   })
 })
 
+const offline = { fetchImpl: async () => new Response('', { status: 404 }) }

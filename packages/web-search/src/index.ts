@@ -232,24 +232,49 @@ export function currenciesIn(text: string): string[] {
 
 // Official reference rates from the European Central Bank, served without a key
 // by frankfurter.dev. Answers "dolar kaç TL" style questions with a real number.
+export interface RateRequest {
+  base: string
+  target: string
+}
+
+// Which pair a question asks about; null when it is not a rate question.
+export function rateRequest(text: string, lang: string): RateRequest | null {
+  const found = currenciesIn(text)
+  // "try" is also an English word; only act on an actual rate question
+  const asksRate = found.length >= 2 || RATE_WORDS.test(text)
+  if (found.length === 0 || !asksRate) return null
+  const home = HOME_CURRENCY[lang] ?? 'USD'
+  const base = found[0]
+  const target = found[1] ?? (base === home ? (home === 'USD' ? 'EUR' : 'USD') : home)
+  return { base, target }
+}
+
+export function rateUrl({ base, target }: RateRequest): string {
+  return `https://api.frankfurter.dev/v1/latest?base=${base}&symbols=${target}`
+}
+
+export type Rate =
+  | { kind: 'rate'; base: string; target: string; rate: number; date: string; url: string }
+  | { kind: 'unpublished'; currency: string; url: string }
+
+// Official reference rate of the European Central Bank (via frankfurter.dev).
+export async function fetchRate(request: RateRequest, http: HttpOptions = {}): Promise<Rate | null> {
+  const url = rateUrl(request)
+  const missing = [request.base, request.target].find((c) => ECB_MISSING.has(c))
+  if (missing) return { kind: 'unpublished', currency: missing, url }
+  const data = JSON.parse(await isolatedFetch(url, http)) as { date: string; rates: Record<string, number> }
+  const rate = data.rates[request.target]
+  return rate === undefined ? null : { kind: 'rate', ...request, rate, date: data.date, url }
+}
+
 export function exchangeRates(http: Omit<HttpOptions, 'signal'> = {}): SearchProvider {
   return {
     name: 'rates',
 
     async search(query, { lang }) {
-      const found = currenciesIn(query)
-      // "try" is also an English word; only act on an actual rate question
-      const asksRate = found.length >= 2 || RATE_WORDS.test(query)
-      if (found.length === 0 || !asksRate) return []
-      const home = HOME_CURRENCY[lang] ?? 'USD'
-      const base = found[0]
-      const target = found[1] ?? (base === home ? (home === 'USD' ? 'EUR' : 'USD') : home)
-      return [{
-        title: `${base}/${target} (ECB)`,
-        url: `https://api.frankfurter.dev/v1/latest?base=${base}&symbols=${target}`,
-        snippet: '',
-        provider: 'rates',
-      }]
+      const request = rateRequest(query, lang)
+      if (!request) return []
+      return [{ title: `${request.base}/${request.target} (ECB)`, url: rateUrl(request), snippet: '', provider: 'rates' }]
     },
 
     async read(result, { signal }) {
@@ -275,4 +300,187 @@ export function exchangeRates(http: Omit<HttpOptions, 'signal'> = {}): SearchPro
       }
     },
   }
+}
+
+// --- Weather -----------------------------------------------------------------
+
+export interface Place {
+  name: string
+  country: string
+  latitude: number
+  longitude: number
+  population: number
+}
+
+// "İstanbul", "Istanbul" and "istanbul" are the same name: compare without
+// accents and without the Turkish dotted/dotless i difference.
+export function plainName(name: string): string {
+  return name.replace(/ı/g, 'i').normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
+}
+
+// Finds a place by name with Open-Meteo's free geocoder (no key). Only exact
+// name matches count: a declined form like "Москве" must not turn into a
+// different town with a similar name.
+export async function geocode(name: string, lang: string, http: HttpOptions = {}): Promise<Place | null> {
+  const url =
+    'https://geocoding-api.open-meteo.com/v1/search?' +
+    new URLSearchParams({ name, language: lang, count: '10', format: 'json' }).toString()
+  const data = JSON.parse(await isolatedFetch(url, http)) as {
+    results?: { name: string; country?: string; latitude: number; longitude: number; population?: number }[]
+  }
+  const wanted = plainName(name)
+  const matches = (data.results ?? [])
+    .filter((r) => plainName(r.name) === wanted)
+    .sort((a, b) => (b.population ?? 0) - (a.population ?? 0))
+  const r = matches[0]
+  return r
+    ? { name: r.name, country: r.country ?? '', latitude: r.latitude, longitude: r.longitude, population: r.population ?? 0 }
+    : null
+}
+
+export interface Weather {
+  temperature: number
+  feelsLike: number
+  windKmh: number
+  // WMO weather code (0 clear sky ... 99 thunderstorm with hail)
+  code: number
+  // local time at the place, "2026-11-12T20:15"
+  time: string
+  url: string
+}
+
+export async function currentWeather(place: Place, http: HttpOptions = {}): Promise<Weather> {
+  const url =
+    'https://api.open-meteo.com/v1/forecast?' +
+    new URLSearchParams({
+      latitude: String(place.latitude),
+      longitude: String(place.longitude),
+      current: 'temperature_2m,apparent_temperature,weather_code,wind_speed_10m',
+      timezone: 'auto',
+    }).toString()
+  const data = JSON.parse(await isolatedFetch(url, http)) as {
+    current: { time: string; temperature_2m: number; apparent_temperature: number; weather_code: number; wind_speed_10m: number }
+  }
+  const c = data.current
+  return {
+    temperature: c.temperature_2m,
+    feelsLike: c.apparent_temperature,
+    windKmh: c.wind_speed_10m,
+    code: c.weather_code,
+    time: c.time,
+    url,
+  }
+}
+
+
+// --- Wikidata (structured facts) ----------------------------------------------
+
+export interface WikidataEntity {
+  id: string
+  label: string
+  description: string
+}
+
+export type WikidataValue =
+  | { kind: 'item'; id: string; label: string }
+  | { kind: 'quantity'; amount: number; unit: string | null; date: string | null }
+  | { kind: 'time'; time: string }
+  | { kind: 'text'; text: string }
+
+export interface WikidataFact {
+  entity: WikidataEntity
+  property: string
+  values: WikidataValue[]
+  url: string
+}
+
+const WIKIDATA_API = 'https://www.wikidata.org/w/api.php?'
+const wikidataHeaders = { 'Api-User-Agent': USER_AGENT }
+
+async function wikidataGet(params: Record<string, string>, http: HttpOptions): Promise<unknown> {
+  const url = WIKIDATA_API + new URLSearchParams({ format: 'json', origin: '*', ...params }).toString()
+  return JSON.parse(await isolatedFetch(url, { ...http, headers: { ...http.headers, ...wikidataHeaders } }))
+}
+
+export async function wikidataSearch(text: string, lang: string, http: HttpOptions = {}): Promise<WikidataEntity[]> {
+  const data = (await wikidataGet(
+    { action: 'wbsearchentities', search: text, language: lang, uselang: lang, type: 'item', limit: '5' },
+    http,
+  )) as { search?: { id: string; label?: string; description?: string }[] }
+  return (data.search ?? []).map((r) => ({ id: r.id, label: r.label ?? r.id, description: r.description ?? '' }))
+}
+
+interface Claim {
+  rank?: string
+  mainsnak: { datavalue?: { type: string; value: unknown } }
+  qualifiers?: Record<string, { datavalue?: { value: { time?: string } } }[]>
+}
+
+// Picks the statements to trust: preferred ones if marked, otherwise the most
+// recent by "point in time" (populations change), never deprecated ones.
+function bestClaims(claims: Claim[]): Claim[] {
+  const usable = claims.filter((c) => c.rank !== 'deprecated' && c.mainsnak.datavalue)
+  const preferred = usable.filter((c) => c.rank === 'preferred')
+  if (preferred.length) return preferred
+  const dated = usable.filter((c) => c.qualifiers?.P585?.[0]?.datavalue?.value.time)
+  if (dated.length) {
+    return [dated.sort((a, b) => (b.qualifiers!.P585![0].datavalue!.value.time! > a.qualifiers!.P585![0].datavalue!.value.time! ? 1 : -1))[0]]
+  }
+  return usable
+}
+
+// Looks up one property (P36 capital, P1082 population...) of the first
+// matching entity that has it.
+export async function wikidataFact(
+  entities: WikidataEntity[],
+  properties: string[],
+  lang: string,
+  http: HttpOptions = {},
+): Promise<WikidataFact | null> {
+  // wbgetclaims returns just the asked property (a whole country entity is
+  // megabytes). Entities are asked in parallel; several share a name ("Tesla"
+  // the unit, the person, the company), and the first one that has it wins.
+  for (const property of properties) {
+    const answers = await Promise.all(
+      entities.map((e) =>
+        wikidataGet({ action: 'wbgetclaims', entity: e.id, property }, http)
+          .then((d) => ((d as { claims?: Record<string, Claim[]> }).claims?.[property] ?? []))
+          .catch(() => [] as Claim[]),
+      ),
+    )
+    const index = answers.findIndex((a) => bestClaims(a).length > 0)
+    if (index < 0) continue
+    const entity = entities[index]
+    const claims = { [property]: answers[index] }
+    const raw = bestClaims(claims[property]).slice(0, 3)
+    const values: WikidataValue[] = []
+    const itemIds: string[] = []
+    for (const c of raw) {
+      const dv = c.mainsnak.datavalue!
+      if (dv.type === 'wikibase-entityid') itemIds.push((dv.value as { id: string }).id)
+      else if (dv.type === 'quantity') {
+        const v = dv.value as { amount: string; unit: string }
+        values.push({
+          kind: 'quantity',
+          amount: Number(v.amount),
+          unit: v.unit && v.unit !== '1' ? v.unit.split('/').pop()! : null,
+          date: c.qualifiers?.P585?.[0]?.datavalue?.value.time?.slice(1, 11) ?? null,
+        })
+      } else if (dv.type === 'time') values.push({ kind: 'time', time: (dv.value as { time: string }).time.slice(1, 11) })
+      else if (dv.type === 'string') values.push({ kind: 'text', text: dv.value as string })
+      else if (dv.type === 'monolingualtext') values.push({ kind: 'text', text: (dv.value as { text: string }).text })
+    }
+    if (itemIds.length) {
+      const labels = (await wikidataGet(
+        { action: 'wbgetentities', ids: itemIds.join('|'), props: 'labels', languages: `${lang}|en` },
+        http,
+      )) as { entities: Record<string, { labels?: Record<string, { value: string }> }> }
+      for (const id of itemIds) {
+        const l = labels.entities[id]?.labels
+        values.push({ kind: 'item', id, label: l?.[lang]?.value ?? l?.en?.value ?? id })
+      }
+    }
+    if (values.length) return { entity, property, values, url: `https://www.wikidata.org/wiki/${entity.id}` }
+  }
+  return null
 }
