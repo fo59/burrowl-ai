@@ -8,7 +8,6 @@ interface Props {
   color: string
 }
 
-// A few line icons drawn with react-native-svg, so no icon font dependency is needed.
 export default function Icon({ name, size = 20, color }: Props) {
   const stroke = { stroke: color, strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round', fill: 'none' } as const
   return (

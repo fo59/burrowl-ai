@@ -104,7 +104,6 @@ export const strings: Record<Lang, Strings> = {
   },
 }
 
-// Start in the phone's language without asking (zero setup); English otherwise.
 export function deviceLang(): Lang {
   const locale = Intl.DateTimeFormat().resolvedOptions().locale.slice(0, 2).toLowerCase()
   return (LANGS as string[]).includes(locale) ? (locale as Lang) : 'en'

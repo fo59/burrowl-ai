@@ -2,10 +2,7 @@ import { LANGS, type Lang } from '@burrowl/privacy'
 import { B, E, detectLanguage, escapeRegExp, foldTurkish } from './text.ts'
 
 interface SearchKeywords {
-  // Matched at the start of a word, so suffixed forms count too (fiyat → fiyatları).
   prefixes: string[]
-  // Matched as whole words only; short words that would otherwise hit unrelated
-  // words (son → sonra) or collide across languages (Turkish "son" vs English "son").
   words: string[]
 }
 
@@ -13,7 +10,6 @@ const keywords: Record<Lang, SearchKeywords> = {
   tr: {
     prefixes: [
       'bugün', 'fiyat', 'güncel', 'haber', 'borsa', 'döviz', 'dolar', 'hava durumu',
-      // recommendations and comparisons need current information too
       'öner', 'tavsiye', 'karşılaştır', 'en iyi', 'en ucuz', 'yeni çıkan', 'piyasa',
     ],
     words: ['son', 'kur'],
@@ -53,27 +49,17 @@ const moneyPattern = new RegExp(
   'iu',
 )
 
-// Questions that ask for a fact. A small on-device model's own knowledge is
-// often outdated or wrong (it named Almaty as Kazakhstan's capital), so facts
-// come from sources, not from the model's memory.
 const FACT_QUESTION = new RegExp(
   `${B}(${[
-    // tr (folded)
     'kim', 'kimdir', 'kimin', 'nerede', 'neresi', 'nereye', 'nedir', 'ne zaman', 'kac', 'kactir', 'hangi', 'hangisi',
-    // en
     'who', 'whom', 'whose', 'where', 'when', 'which', 'what is', 'what are', 'what was', 'how many', 'how much',
     'how tall', 'how long', 'how far', 'how old',
-    // ru
     'кто', 'где', 'когда', 'сколько', 'какой', 'какая', 'какое', 'какие', 'что такое',
   ].join('|')})${E}` +
-    // topic words that ask for a fact even without a question word ("Türkiye'nin başkenti"),
-    // matched as word starts so suffixed forms count
     `|${B}(${['nufus', 'baskent', 'yuzolcum', 'yuksekli', 'uzunlu', 'kurucu', 'yazari', 'yonetmen', 'population', 'capital', 'столиц', 'население', 'высот'].join('|')})`,
   'iu',
 )
 
-// Things the model answers well on its own: arithmetic, writing, translating,
-// small talk and the date (which it is given).
 const NO_SEARCH = new RegExp(
   [
     String.raw`\d+\s*(x|\*|\+|-|/|carpi|bolu|arti|eksi|times|plus|minus|divided by|умнож\S*|плюс|минус|раздел\S*)\s*(на\s*|by\s*)?\d+`,

@@ -7,7 +7,6 @@ type Shape = 'circle' | 'squircle' | 'none';
 type Props = {
   size?: number;
   variant?: Variant;
-  /** circle: daire logo, squircle: uygulama ikonu, none: sadece baykuş */
   shape?: Shape;
 };
 

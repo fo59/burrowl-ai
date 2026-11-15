@@ -1,22 +1,12 @@
-// Answer-quality check against real sources and a local Ollama model.
-//
-//   node tools/eval.ts [model]          e.g. node tools/eval.ts qwen2.5:1.5b
-//
-// Each case asks the full assistant flow a question and checks the answer for
-// the fact it must contain. Run it when changing the model, prompts or sources
-// to see whether answers got better or worse. Needs internet and Ollama.
 import { answer, ollamaEngine, type Lang } from '../packages/assistant/src/index.ts'
 
 interface Case {
   name: string
   lang: Lang
-  // earlier questions of the same conversation, asked first
   before?: string[]
   question: string
   expect: RegExp
-  // where the fact has to appear: the answer (default) or the outgoing query
   in?: 'answer' | 'query'
-  // the outgoing query must not contain this (privacy)
   queryMustNotContain?: RegExp
 }
 
@@ -41,7 +31,6 @@ const cases: Case[] = [
     lang: 'tr',
     before: ["Fransa'nın başkenti neresi?"],
     question: 'peki onun nüfusu kaç',
-    // the answer must be about Paris, i.e. the earlier question was understood
     expect: /Paris/i,
   },
   {

@@ -175,14 +175,12 @@ describe('answer', () => {
       engine,
       providers: [provider({ İstanbul: 'İstanbul Türkiyenin en kalabalık şehridir. Nüfusu 2023 itibarıyla 15,7 milyondur.' })],
       onEvent: (e) => events.push(e),
-      http: offline, // no Wikidata: this tests the search-and-read path
+      http: offline,
     })
     assert.equal(result.searchQuery, 'İstanbul nüfusu 2026')
     assert.deepEqual(result.sources, [{ n: 1, title: 'İstanbul', url: 'https://x/İstanbul' }])
     assert.equal(result.text, 'İstanbulun nüfusu 15,7 milyondur [1].')
-    // researched answers are checked before they are shown, so they are not streamed
     assert.deepEqual([...new Set(events.map((e) => e.type))], ['search', 'sources', 'read', 'writing'])
-    // the model only sees the selected passage, marked as a source
     assert.match(engine.calls[1][1].content, /\[1\] İstanbul: .*15,7 milyon/)
   })
 

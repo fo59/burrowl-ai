@@ -41,7 +41,6 @@ export { detectIntent, placeCandidates, type Intent } from './intents.ts'
 export { evaluateMath } from './math.ts'
 export { factRequest } from './facts.ts'
 export { dropInvalidCitations, evidenceCoverage, keepVerifiedSentences } from './verify.ts'
-// The UI only talks to the orchestrator, so conversation storage is reached through it too.
 export {
   createKeyValueChatStore,
   createSqlChatStore,
@@ -61,12 +60,9 @@ export interface Message {
   searchQuery?: string
   sources?: Source[]
   status?: Status
-  // privacy rule kinds that were removed from the outgoing query (email, phone...)
   removed?: string[]
   read?: { done: number; total: number }
 }
-
-// --- Answer flow -----------------------------------------------------------
 
 export type AnswerEvent =
   | { type: 'search'; query: string; removed: string[] }
@@ -75,7 +71,6 @@ export type AnswerEvent =
   | { type: 'writing' }
   | { type: 'token'; text: string }
 
-// What the previous answer did, for "did you use the internet?" questions.
 export interface LastTurn {
   searchQuery?: string
   sources: number
@@ -84,15 +79,12 @@ export interface LastTurn {
 
 export interface AnswerOptions {
   engine: LlmEngine
-  // earlier messages of the conversation, oldest first
   history?: ChatMessage[]
-  // pages read earlier in this conversation (reused by follow-up questions)
   pageCache?: Map<string, Page>
   providers?: SearchProvider[]
   web?: 'auto' | 'on' | 'off'
   signal?: AbortSignal
   onEvent?: (event: AnswerEvent) => void
-  // the last assistant turn, null when there was none
   lastTurn?: LastTurn | null
   http?: Omit<HttpOptions, 'signal'>
   now?: Date
@@ -130,9 +122,7 @@ export async function answer(question: string, uiLang: Lang, options: AnswerOpti
   }
   const web = options.web ?? 'auto'
   let intent = detectIntent(question, history, uiLang)
-  // "isn't that old?" after a searched question needs fresh information too
   if (intent.kind === 'chat' && searchFollowUpOf(question, history, uiLang)) intent = { kind: 'fact' }
-  // the web switch forces or forbids searching for questions the model would otherwise answer alone
   if (web === 'on' && intent.kind === 'chat') intent = { kind: 'fact' }
   if (web === 'off' && (intent.kind === 'fact' || intent.kind === 'recommend')) intent = { kind: 'chat' }
 
@@ -159,8 +149,6 @@ export async function answer(question: string, uiLang: Lang, options: AnswerOpti
       if (web === 'off') return done(ctx.t.webOff)
       return { ...(await weatherAnswer(ctx, intent.places)), intent: intent.kind }
     case 'correction': {
-      // "wrong" → answer the last question again with its own tool (weather,
-      // rates...) or a fresh web search, instead of repeating the old answer
       const again = detectIntent(intent.previous, [], uiLang)
       const result =
         again.kind === 'chat' || again.kind === 'fact' || again.kind === 'correction'
@@ -171,7 +159,6 @@ export async function answer(question: string, uiLang: Lang, options: AnswerOpti
     case 'recommend':
       return { ...(await researchAnswer(ctx, { strict: true })), intent: intent.kind }
     case 'fact': {
-      // structured data first (capital, population...); prose search otherwise
       const fact = await factAnswer(ctx).catch(() => null)
       if (fact) return { ...fact, intent: intent.kind }
       return { ...(await researchAnswer(ctx, { strict: false })), intent: intent.kind }
@@ -191,8 +178,6 @@ async function stream(ctx: Context, messages: ChatMessage[], temperature: number
   return cleanOutput(dropInvalidCitations(text, 0))
 }
 
-// Small models sometimes slip into another script mid-sentence (Chinese words
-// in a Turkish answer). None of our languages use those scripts.
 export function cleanOutput(text: string): string {
   return text
     .replace(/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]+/gu, '')
@@ -241,7 +226,6 @@ async function weatherAnswer(ctx: Context, places: string[]): Promise<Omit<Answe
   if (places.length === 0) return { text: t.askPlace, sources: [] }
   const http = { ...options.http, signal: options.signal }
   for (const name of places) {
-    // only the place name goes out, and the user sees it
     options.onEvent?.({ type: 'search', query: name, removed: [] })
     const place = await geocode(name, lang, http).catch(() => null)
     if (!place) continue
@@ -253,9 +237,6 @@ async function weatherAnswer(ctx: Context, places: string[]): Promise<Omit<Answe
   return { text: t.placeNotFound(places[0]), searchQuery: places[0], sources: [] }
 }
 
-// Personal data in the question, and the words that label it ("numaram
-// [phone]", "[phone] numaralı"): they only describe the data and pull searches
-// toward unrelated pages. `clean` is the question without both.
 function personalData(question: string, langs: Lang[]): { removed: string[]; labels: Set<string>; clean: string } {
   const { text, removed } = sanitizeQuery(question, langs)
   const PLACEHOLDER = String.raw`\[[^\]]*removed\]`
@@ -274,8 +255,6 @@ function personalData(question: string, langs: Lang[]): { removed: string[]; lab
 
 const UNITS: Record<string, string> = { Q11573: 'm', Q828224: 'km', Q712226: 'km²', Q174728: 'cm' }
 
-// Capital, population, author... read as data from Wikidata: no model, no prose
-// to misread. Returns null when the question is not one of these or nothing is found.
 async function factAnswer(ctx: Context): Promise<Omit<AnswerResult, 'intent'> | null> {
   const { question, lang, langs, options, t } = ctx
   const earlierAnswer = [...ctx.history].reverse().find((m) => m.role === 'assistant')?.content
@@ -283,16 +262,12 @@ async function factAnswer(ctx: Context): Promise<Omit<AnswerResult, 'intent'> | 
   const request = factRequest(personal.clean, earlierAnswer)
   if (!request) return null
   const http = { ...options.http, signal: options.signal }
-  // only the name goes out, filtered like every other query
   const subjects = request.subjects.map((s) => toOutgoingQuery(s, langs).query).filter(Boolean)
   if (subjects.length === 0) return null
   const found = await Promise.all(subjects.map((s) => wikidataSearch(s, lang, http).catch(() => [] as WikidataEntity[])))
-  // a name can end like a suffix (Berlin), so an exact label match wins over the first guess
-  // and the other results follow ("Tesla" the unit has no founder, Tesla Motors does)
   const exact = subjects.flatMap((s, i) => found[i].filter((e) => plainName(e.label) === plainName(s)))
   const candidates = [...exact, ...(found.find((f) => f.length) ?? [])]
   const entities = candidates.filter((e, i) => candidates.findIndex((c) => c.id === e.id) === i)
-  // the forms of one word all go out; the one that matched is shown
   const shown = subjects.find((s) => exact.some((e) => plainName(e.label) === plainName(s))) ?? subjects[0]
   options.onEvent?.({ type: 'search', query: shown, removed: personal.removed })
   const fact = await wikidataFact(entities.slice(0, 6), request.properties, lang, http)
@@ -318,7 +293,6 @@ async function factAnswer(ctx: Context): Promise<Omit<AnswerResult, 'intent'> | 
   }
 }
 
-// Search → read → pick passages → check the evidence → write → verify numbers.
 async function researchAnswer(
   ctx: Context,
   { strict }: { strict: boolean },
@@ -327,7 +301,6 @@ async function researchAnswer(
   const { engine, providers = [exchangeRates(), wikipedia(options.http)], signal, onEvent } = options
   const earlier: EarlierTurn | null = searchFollowUpOf(question, history, ctx.uiLang)
 
-  // 1. A short query from the user's own words; personal data removed by rules.
   let draft = ''
   try {
     draft = await rewriteQuery(question, lang, engine, earlier, signal)
@@ -336,8 +309,6 @@ async function researchAnswer(
   }
   let outgoing = toOutgoingQuery(draft || keywordQuery(question), langs)
   if (!outgoing.query) outgoing = toOutgoingQuery(keywordQuery(question), langs)
-  // The rewrite may already have left personal data out; the user is still
-  // told what in their message was kept from the search.
   const personal = personalData(question, langs)
   outgoing.removed = [...new Set([...personal.removed, ...outgoing.removed])]
   if (personal.labels.size) {
@@ -346,19 +317,15 @@ async function researchAnswer(
   }
   onEvent?.({ type: 'search', query: outgoing.query, removed: outgoing.removed })
 
-  // 2. Search; if the model's wording finds nothing, try the plain keywords.
   let results = outgoing.query ? await searchAll(providers, outgoing.query, { lang, limit: 4, signal }) : []
   if (results.length === 0) {
     const fallback = toOutgoingQuery(keywordQuery(question), langs).query
     if (fallback && fallback !== outgoing.query) results = await searchAll(providers, fallback, { lang, limit: 4, signal })
   }
-  // An official exchange rate answers a rate question on its own; encyclopedia
-  // pages next to it are full of old rates that a small model mixes up.
   if (results.some((r) => r.provider === 'rates')) results = results.filter((r) => r.provider === 'rates')
   const sources: Source[] = results.map((r, i) => ({ n: i + 1, title: r.title, url: r.url }))
   onEvent?.({ type: 'sources', sources })
 
-  // 3. Read pages in parallel and keep the most relevant passages.
   const pages = await readPages(results, providers, {
     lang,
     signal,
@@ -366,27 +333,20 @@ async function researchAnswer(
     onRead: (doneCount, total) => onEvent?.({ type: 'read', done: doneCount, total }),
   })
   const chunks = pages.flatMap((p) => chunkText(p.text, sources.find((s) => s.url === p.url)?.n ?? 0))
-  // Encyclopedia articles put the key facts in their opening paragraph, so the
-  // lead of the two best results always goes in, then the best keyword matches.
   const leads = sources.slice(0, 2).flatMap((s) => chunks.filter((c) => c.source === s.n).slice(0, 1))
   const best = rankChunks(`${question} ${outgoing.query}`, chunks, 6)
   const top: Chunk[] = [...new Set([...leads, ...best])].slice(0, 6)
 
-  // 4. Evidence check: if the passages are about something else, the model is
-  //    not asked at all — "I could not find it" beats a made-up answer.
   const coverage = evidenceCoverage(outgoing.query, top)
   const base = { searchQuery: outgoing.query, removed: outgoing.removed, sources }
   if (top.length === 0 || coverage < (strict ? 1 : 0.5)) {
-    // unrelated pages are not shown as sources of an answer that has none
     onEvent?.({ type: 'sources', sources: [] })
     return { ...base, sources: [], text: strict ? t.noReliableRecommendation : t.noReliableSource }
   }
 
-  // 5. Write from those passages only. Not streamed: the text is checked first.
   onEvent?.({ type: 'writing' })
   const raw = await engine.generate(buildPrompt(question, lang, top, sources, history, options.now), { signal })
 
-  // 6. Verify: every number must come from the sources (or the question/date).
   const now = options.now ?? new Date()
   const allowed = `${question} ${now.getFullYear()} ${now.getDate()}`
   const verified = keepVerifiedSentences(cleanOutput(dropInvalidCitations(raw, sources.length)), top.map((c) => c.text).join(' '), allowed)

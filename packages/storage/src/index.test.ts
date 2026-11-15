@@ -13,7 +13,6 @@ import {
   type SqlDatabase,
 } from './index.js'
 
-// node:sqlite behind the same interface expo-sqlite fills on the phone
 function nodeSqlite(db = new DatabaseSync(':memory:')): SqlDatabase {
   return {
     async exec(sql) {
@@ -115,7 +114,6 @@ describe('titleFrom', () => {
 })
 
 describe('createSqlChatStore (deleting really deletes)', () => {
-  // Reads every file the database left on disk (main file, WAL, journal).
   function rawBytes(dir: string): string {
     return readdirSync(dir).map((f) => readFileSync(join(dir, f)).toString('latin1')).join('')
   }

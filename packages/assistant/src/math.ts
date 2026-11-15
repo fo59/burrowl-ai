@@ -1,7 +1,5 @@
 import { foldTurkish } from './text.ts'
 
-// Arithmetic is done here, not by the model: small models get multiplication wrong.
-
 const OPERATOR_WORDS: [RegExp, string][] = [
   [/(carpi|kere|times|multiplied by|умножить на|умножить|×|\bx\b)/gu, '*'],
   [/(bolu|divided by|разделить на|делить на|÷)/gu, '/'],
@@ -9,8 +7,6 @@ const OPERATOR_WORDS: [RegExp, string][] = [
   [/(eksi|minus|минус)/gu, '-'],
 ]
 
-// Words allowed around an expression ("12 çarpı 7 kaç eder?"); anything else
-// means the message is not simply a calculation.
 const FILLER = new Set([
   'kac', 'eder', 'yapar', 'nedir', 'ne', 'sonuc', 'sonucu', 'hesapla', 'hesaplar', 'misin', 'mi', 'lutfen', 'bana',
   'what', 'is', 'whats', 'calculate', 'compute', 'please', 'equals',
@@ -25,7 +21,6 @@ export interface Calculation {
 export function evaluateMath(text: string): Calculation | null {
   let s = foldTurkish(text)
   for (const [re, op] of OPERATOR_WORDS) s = s.replace(re, ` ${op} `)
-  // decimal comma (2,5) → dot, but keep thousands as written
   s = s.replace(/(\d),(\d)/g, '$1.$2')
 
   const match = s.match(/[\d.]+(?:\s*[-+*/^]\s*\(?\s*[\d.]+\s*\)?)+|\(\s*[\d.]+(?:\s*[-+*/^]\s*[\d.]+)+\s*\)(?:\s*[-+*/^]\s*[\d.]+)*/)
@@ -40,7 +35,6 @@ export function evaluateMath(text: string): Calculation | null {
   return { expression: match[0].replace(/\s+/g, ' ').trim(), value }
 }
 
-// Shunting-yard evaluation of + - * / ^ and parentheses; no eval().
 function evaluate(expression: string): number | null {
   const tokens = expression.match(/\d+(?:\.\d+)?|[-+*/^()]/g)
   if (!tokens) return null

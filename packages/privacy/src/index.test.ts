@@ -100,9 +100,6 @@ describe('removePhones', () => {
     )
   })
 
-
-
-
 })
 
 describe('hasEmail', () => {

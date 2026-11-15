@@ -44,8 +44,6 @@ const ANSWER_RULES: Record<Lang, { base: string; withSources: string; noSources:
 
 const TODAY_LABEL: Record<Lang, string> = { tr: 'Bugünün tarihi', en: "Today's date", ru: 'Сегодняшняя дата' }
 
-// The model's training data stops in the past; without today's date it calls
-// a years-old phone "the latest". The date comes from the phone's own clock.
 function withDate(system: string, lang: Lang, today: Date): string {
   const date = today.toLocaleDateString(LOCALES[lang], { year: 'numeric', month: 'long', day: 'numeric' })
   return `${system} ${TODAY_LABEL[lang]}: ${date}.`
@@ -88,8 +86,6 @@ const ADVICE_RULES: Record<Lang, string> = {
   ru: 'Ты доброжелательный и спокойный помощник. Одним предложением покажи, что понимаешь ситуацию, затем дай 3-5 коротких практичных советов списком. Не осуждай и не ставь диагнозов. Если есть серьёзная опасность или проблема со здоровьем, посоветуй обратиться к специалисту или в экстренную службу. Отвечай по-русски.',
 }
 
-// Writing and advice need no sources and work best without earlier turns:
-// small models otherwise copy the shape of the previous answer.
 export function writePrompt(request: string, lang: Lang): ChatMessage[] {
   return [
     { role: 'system', content: WRITE_RULES[lang] },

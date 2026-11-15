@@ -1,7 +1,5 @@
 import type { Message, StoredMessage } from '@burrowl/assistant'
 
-// What is saved for each message: its text plus the parts shown around it
-// (search query, sources, what was removed). Progress fields are not saved.
 export function toStored(m: Message): StoredMessage {
   const meta: Record<string, unknown> = {}
   if (m.searchQuery !== undefined) meta.searchQuery = m.searchQuery

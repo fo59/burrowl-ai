@@ -37,13 +37,11 @@ export default function App() {
   const [showHistory, setShowHistory] = useState(false)
   const scroll = useRef<ComponentRef<typeof ScrollView>>(null)
   const controller = useRef<AbortController | null>(null)
-  // pages read in this conversation; follow-up questions reuse them
   const pageCache = useRef(new Map<string, Page>())
   const engine = useMemo(() => ollamaEngine({ model: OLLAMA_MODEL, baseUrl: OLLAMA_URL }), [])
   const isEmpty = draft.trim() === ''
   const t = strings[lang]
 
-  // Open the chat store and continue the most recent conversation.
   useEffect(() => {
     void (async () => {
       const opened = await openChatStore()
@@ -96,11 +94,9 @@ export default function App() {
     if (isEmpty || busy) return
     const question = draft.trim()
     const id = Date.now()
-    // Finished turns of this conversation, so follow-up questions have context.
     const history = messages
       .filter((m) => m.text && (m.role === 'user' || m.status === 'done'))
       .map((m) => ({ role: m.role, content: m.text }))
-    // what the previous answer actually did, for "did you use the internet?"
     const previous = [...messages].reverse().find((m) => m.role === 'assistant' && m.status === 'done')
     const lastTurn = previous
       ? { searchQuery: previous.searchQuery, sources: previous.sources?.length ?? 0, removed: previous.removed ?? [] }
@@ -119,7 +115,6 @@ export default function App() {
     }
     if (store && convId) await store.saveMessage(convId, toStored(userMessage))
 
-    // Updates arrive while the answer is being built; keep a copy for saving.
     const update = (change: Partial<Message>) => {
       reply = { ...reply, ...change }
       const snapshot = reply
@@ -144,7 +139,6 @@ export default function App() {
           else if (e.type === 'token') update({ text: reply.text + e.text })
         },
       })
-      // the final text has citations to non-existent sources removed
       update({ status: 'done', text: result.text })
     } catch {
       if (abort.signal.aborted) update({ status: 'done', text: `${reply.text} ${t.stopped}`.trim() })
@@ -376,7 +370,6 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    // On web a text input has an intrinsic width; without this it pushes the row off-screen.
     minWidth: 0,
     padding: 12,
     borderWidth: 1,

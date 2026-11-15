@@ -1,8 +1,6 @@
 export type Lang = 'tr' | 'en' | 'ru'
 export const LANGS: Lang[] = ['tr', 'en', 'ru']
 
-// JavaScript's \b only treats ASCII letters as word characters, so it fails on
-// Turkish (ü, ş) and every non-Latin script. These lookarounds work for all scripts.
 const B = String.raw`(?<![\p{L}\p{N}])`
 const E = String.raw`(?![\p{L}\p{N}])`
 
@@ -17,7 +15,6 @@ export function removeEmails(text: string): string {
   return text.replace(emailPatternGlobal, '[email removed]')
 }
 
-// IBAN lengths per country (ISO 13616 registry, most common countries).
 const IBAN_LENGTHS: Record<string, number> = {
   AD: 24, AE: 23, AL: 28, AT: 20, AZ: 28, BA: 20, BE: 16, BG: 22, BH: 22, BR: 29,
   CH: 21, CY: 28, CZ: 24, DE: 22, DK: 18, EE: 20, EG: 29, ES: 24, FI: 18, FR: 27,
@@ -70,8 +67,6 @@ export function removeInternationalPhones(text: string): string {
   })
 }
 
-// --- Turkey ---
-
 const phonePattern = /((\+90|0)[\s-]?)?(5\d{2})[\s-]?(\d{3})[\s-]?(\d{2})[\s-]?(\d{2})/g
 
 export function removePhones(text: string): string {
@@ -84,16 +79,12 @@ export function removeTcNumber(text: string): string {
   return text.replace(tcPattern, '[TC number removed]')
 }
 
-// --- Russia ---
-
 const ruPhonePattern = new RegExp(
   String.raw`(?:\+7|${B}8)[\s-]?\(?9\d{2}\)?[\s-]?\d{3}[\s-]?\d{2}[\s-]?\d{2}${E}`,
   'gu',
 )
 const snilsPattern = new RegExp(String.raw`${B}\d{3}-\d{3}-\d{3}[\s-]\d{2}${E}`, 'gu')
 const ruPassportPattern = new RegExp(String.raw`${B}\d{2}\s?\d{2}\s?\d{6}${E}`, 'gu')
-
-// --- United States (default rules for English) ---
 
 const ssnPattern = new RegExp(String.raw`${B}\d{3}-\d{2}-\d{4}${E}`, 'gu')
 const usPhonePattern = new RegExp(
@@ -110,8 +101,6 @@ function rule(kind: string, pattern: RegExp, placeholder: string): PrivacyRule {
   return { kind, apply: (text) => text.replace(pattern, placeholder) }
 }
 
-// Order matters: long, specific patterns (IBAN, cards) run before short numeric
-// ones, otherwise a phone rule can match digits inside an IBAN.
 const universalFirst: PrivacyRule[] = [
   { kind: 'email', apply: removeEmails },
   { kind: 'iban', apply: removeIbans },
@@ -143,8 +132,6 @@ export interface SanitizeResult {
   removed: string[]
 }
 
-// Several languages can be passed: when the UI is in English but the user types
-// Turkish, both rule sets apply. Removing too much is safer than leaking.
 export function sanitizeQuery(text: string, lang: Lang | Lang[] = 'tr'): SanitizeResult {
   const langs = Array.isArray(lang) ? lang : [lang]
   const local = [...new Set(langs)].flatMap((l) => localRules[l])

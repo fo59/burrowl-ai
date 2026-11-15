@@ -10,8 +10,6 @@ export interface GenerateOptions {
   maxTokens?: number
 }
 
-// The orchestrator only knows this interface. Ollama is used while developing
-// on a computer; on the phone the same interface is backed by llama.rn.
 export interface LlmEngine {
   name: string
   generate(messages: ChatMessage[], options?: GenerateOptions): Promise<string>
@@ -25,8 +23,6 @@ export interface OllamaOptions {
   fetchImpl?: FetchLike
 }
 
-// Development-only engine: talks to an Ollama server on the same computer
-// (http://localhost:11434). It is never part of the shipped app.
 export function ollamaEngine({ model, baseUrl = 'http://localhost:11434', fetchImpl = fetch }: OllamaOptions): LlmEngine {
   return {
     name: `ollama:${model}`,
@@ -57,7 +53,6 @@ export function ollamaEngine({ model, baseUrl = 'http://localhost:11434', fetchI
         }
       }
 
-      // Ollama streams one JSON object per line.
       const reader = res.body?.getReader()
       if (!reader) {
         for (const line of (await res.text()).split('\n')) handleLine(line)
@@ -79,7 +74,6 @@ export function ollamaEngine({ model, baseUrl = 'http://localhost:11434', fetchI
   }
 }
 
-// Deterministic engine for tests: returns a fixed answer, streamed word by word.
 export function fakeEngine(answer: string | ((messages: ChatMessage[]) => string)): LlmEngine & { calls: ChatMessage[][] } {
   const calls: ChatMessage[][] = []
   return {

@@ -20,8 +20,6 @@ export interface SearchOptions {
 export interface SearchProvider {
   name: string
   search(query: string, options: SearchOptions): Promise<SearchResult[]>
-  // Providers that know how to get clean text for their own results (Wikipedia's
-  // plain-text API) implement this; others fall back to downloading the HTML.
   read?(result: SearchResult, options: SearchOptions): Promise<Page | null>
 }
 
@@ -37,8 +35,6 @@ export interface HttpOptions {
 
 const USER_AGENT = 'BurrowlAI/0.0.1 (privacy-first on-device assistant)'
 
-// Every request starts from scratch: no cookies, no referrer, no cache, and a hard
-// time limit so one slow site cannot hold up the answer.
 export async function isolatedFetch(url: string, options: HttpOptions = {}): Promise<string> {
   const { timeoutMs = 5000, maxChars = 400_000, fetchImpl = fetch, signal, headers } = options
   const controller = new AbortController()
@@ -79,7 +75,6 @@ export function stripTags(html: string): string {
   return decodeEntities(html.replace(/<[^>]*>/g, '')).replace(/\s+/g, ' ').trim()
 }
 
-// Keeps only the readable text of a page. Scripts are removed, never run.
 export function extractText(html: string): string {
   const withoutNoise = html
     .replace(/<!--[\s\S]*?-->/g, ' ')
@@ -140,8 +135,6 @@ export function wikipedia(http: Omit<HttpOptions, 'signal'> = {}): SearchProvide
   }
 }
 
-// Tries providers in order and quietly moves on when one fails, so a blocked or
-// broken source never breaks the answer.
 export async function searchAll(
   providers: SearchProvider[],
   query: string,
@@ -160,21 +153,17 @@ export async function searchAll(
         }
       }
     } catch {
-      // try the next source
     }
   }
   return results.slice(0, limit)
 }
 
-// Downloads the pages in parallel; pages that time out or fail are skipped.
 export async function readPages(
   results: SearchResult[],
   providers: SearchProvider[],
   options: SearchOptions & {
     http?: Omit<HttpOptions, 'signal'>
     onRead?: (done: number, total: number) => void
-    // pages already read in this conversation; follow-up questions reuse them
-    // instead of downloading them again
     cache?: Map<string, Page>
   },
 ): Promise<Page[]> {
@@ -192,7 +181,6 @@ export async function readPages(
               url: r.url,
               text: extractText(html),
             }))
-        // exchange rates change; everything else is kept for the conversation
         if (page && r.provider !== 'rates') options.cache?.set(r.url, page)
         return page
       } finally {
@@ -203,9 +191,6 @@ export async function readPages(
   return settled.flatMap((s) => (s.status === 'fulfilled' && s.value ? [s.value] : []))
 }
 
-// --- Exchange rates ----------------------------------------------------------
-
-// Names people use for each currency, folded to plain lowercase letters.
 const CURRENCY_NAMES: [string, RegExp][] = [
   ['TRY', /(^|[^\p{L}])(tl|try|lira|turk lirasi|türk lirası|лир)/iu],
   ['USD', /(^|[^\p{L}])(usd|dolar|dollar|доллар)|\$/iu],
@@ -220,7 +205,6 @@ const RATE_WORDS = /(^|[^\p{L}])(kur|kuru|kaç|kac|döviz|doviz|rate|exchange|co
 
 const HOME_CURRENCY: Record<string, string> = { tr: 'TRY', ru: 'RUB', en: 'USD' }
 
-// The European Central Bank stopped publishing rouble rates in 2022.
 const ECB_MISSING = new Set(['RUB'])
 
 export function currenciesIn(text: string): string[] {
@@ -230,17 +214,13 @@ export function currenciesIn(text: string): string[] {
     .map((c) => c.code)
 }
 
-// Official reference rates from the European Central Bank, served without a key
-// by frankfurter.dev. Answers "dolar kaç TL" style questions with a real number.
 export interface RateRequest {
   base: string
   target: string
 }
 
-// Which pair a question asks about; null when it is not a rate question.
 export function rateRequest(text: string, lang: string): RateRequest | null {
   const found = currenciesIn(text)
-  // "try" is also an English word; only act on an actual rate question
   const asksRate = found.length >= 2 || RATE_WORDS.test(text)
   if (found.length === 0 || !asksRate) return null
   const home = HOME_CURRENCY[lang] ?? 'USD'
@@ -257,7 +237,6 @@ export type Rate =
   | { kind: 'rate'; base: string; target: string; rate: number; date: string; url: string }
   | { kind: 'unpublished'; currency: string; url: string }
 
-// Official reference rate of the European Central Bank (via frankfurter.dev).
 export async function fetchRate(request: RateRequest, http: HttpOptions = {}): Promise<Rate | null> {
   const url = rateUrl(request)
   const missing = [request.base, request.target].find((c) => ECB_MISSING.has(c))
@@ -302,8 +281,6 @@ export function exchangeRates(http: Omit<HttpOptions, 'signal'> = {}): SearchPro
   }
 }
 
-// --- Weather -----------------------------------------------------------------
-
 export interface Place {
   name: string
   country: string
@@ -312,15 +289,10 @@ export interface Place {
   population: number
 }
 
-// "İstanbul", "Istanbul" and "istanbul" are the same name: compare without
-// accents and without the Turkish dotted/dotless i difference.
 export function plainName(name: string): string {
   return name.replace(/ı/g, 'i').normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
 }
 
-// Finds a place by name with Open-Meteo's free geocoder (no key). Only exact
-// name matches count: a declined form like "Москве" must not turn into a
-// different town with a similar name.
 export async function geocode(name: string, lang: string, http: HttpOptions = {}): Promise<Place | null> {
   const url =
     'https://geocoding-api.open-meteo.com/v1/search?' +
@@ -342,9 +314,7 @@ export interface Weather {
   temperature: number
   feelsLike: number
   windKmh: number
-  // WMO weather code (0 clear sky ... 99 thunderstorm with hail)
   code: number
-  // local time at the place, "2026-11-12T20:15"
   time: string
   url: string
 }
@@ -371,9 +341,6 @@ export async function currentWeather(place: Place, http: HttpOptions = {}): Prom
     url,
   }
 }
-
-
-// --- Wikidata (structured facts) ----------------------------------------------
 
 export interface WikidataEntity {
   id: string
@@ -416,8 +383,6 @@ interface Claim {
   qualifiers?: Record<string, { datavalue?: { value: { time?: string } } }[]>
 }
 
-// Picks the statements to trust: preferred ones if marked, otherwise the most
-// recent by "point in time" (populations change), never deprecated ones.
 function bestClaims(claims: Claim[]): Claim[] {
   const usable = claims.filter((c) => c.rank !== 'deprecated' && c.mainsnak.datavalue)
   const preferred = usable.filter((c) => c.rank === 'preferred')
@@ -429,17 +394,12 @@ function bestClaims(claims: Claim[]): Claim[] {
   return usable
 }
 
-// Looks up one property (P36 capital, P1082 population...) of the first
-// matching entity that has it.
 export async function wikidataFact(
   entities: WikidataEntity[],
   properties: string[],
   lang: string,
   http: HttpOptions = {},
 ): Promise<WikidataFact | null> {
-  // wbgetclaims returns just the asked property (a whole country entity is
-  // megabytes). Entities are asked in parallel; several share a name ("Tesla"
-  // the unit, the person, the company), and the first one that has it wins.
   for (const property of properties) {
     const answers = await Promise.all(
       entities.map((e) =>

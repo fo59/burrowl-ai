@@ -6,7 +6,6 @@ function streamingResponse(lines: string[]): Response {
   const encoder = new TextEncoder()
   const body = new ReadableStream({
     start(controller) {
-      // split a line across two chunks to make sure buffering works
       const all = lines.join('\n') + '\n'
       const mid = Math.floor(all.length / 2)
       controller.enqueue(encoder.encode(all.slice(0, mid)))

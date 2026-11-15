@@ -5,8 +5,6 @@ export interface Conversation {
   updatedAt: number
 }
 
-// Storage does not know the assistant's message type; extra fields (sources,
-// search query...) travel in `meta` as JSON.
 export interface StoredMessage {
   id: number
   role: 'user' | 'assistant'
@@ -19,7 +17,6 @@ export interface ChatStore {
   createConversation(title: string): Promise<Conversation>
   renameConversation(id: string, title: string): Promise<void>
   loadMessages(conversationId: string): Promise<StoredMessage[]>
-  // insert or replace by message id
   saveMessage(conversationId: string, message: StoredMessage): Promise<void>
   deleteConversation(id: string): Promise<void>
   deleteAll(): Promise<void>
@@ -27,8 +24,6 @@ export interface ChatStore {
 
 export type SqlValue = string | number | null
 
-// The few calls the store needs; expo-sqlite on the phone and node:sqlite in
-// tests both fit behind it.
 export interface SqlDatabase {
   exec(sql: string): Promise<void>
   run(sql: string, params?: SqlValue[]): Promise<void>
@@ -39,7 +34,6 @@ export function newId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
 }
 
-// Each entry upgrades the schema by one version; never edit an existing entry.
 const MIGRATIONS = [
   `CREATE TABLE conversations (
      id TEXT PRIMARY KEY,
@@ -58,8 +52,6 @@ const MIGRATIONS = [
    CREATE INDEX messages_by_conversation ON messages (conversation_id, id);`,
 ]
 
-// After a delete nothing readable may stay behind: overwrite freed pages with
-// zeros, empty the write-ahead log and rebuild the file without free pages.
 async function wipeFreedSpace(db: SqlDatabase): Promise<void> {
   await db.all('PRAGMA wal_checkpoint(TRUNCATE)')
   await db.exec('VACUUM;')
@@ -67,7 +59,6 @@ async function wipeFreedSpace(db: SqlDatabase): Promise<void> {
 
 export async function createSqlChatStore(db: SqlDatabase): Promise<ChatStore> {
   await db.exec('PRAGMA foreign_keys = ON;')
-  // SQLite normally only marks deleted rows as free; with this it overwrites them.
   await db.exec('PRAGMA secure_delete = ON;')
   const [{ user_version: version }] = await db.all<{ user_version: number }>('PRAGMA user_version')
   for (let v = version; v < MIGRATIONS.length; v++) {
@@ -129,8 +120,6 @@ export interface KeyValue {
   removeItem(key: string): void
 }
 
-// Used for the browser during development only: browser storage is not
-// encrypted. The phone uses the encrypted SQLite store.
 export function createKeyValueChatStore(kv: KeyValue, prefix = 'burrowl'): ChatStore {
   const read = <T>(key: string, fallback: T): T => {
     const raw = kv.getItem(`${prefix}:${key}`)
@@ -174,7 +163,6 @@ export function createKeyValueChatStore(kv: KeyValue, prefix = 'burrowl'): ChatS
   }
 }
 
-// Turns the opening question into a short conversation title.
 export function titleFrom(text: string, max = 40): string {
   const clean = text.replace(/\s+/g, ' ').trim()
   return clean.length > max ? `${clean.slice(0, max - 1).trimEnd()}…` : clean

@@ -19,8 +19,6 @@ interface Props {
 const LOCALES: Record<Lang, string> = { tr: 'tr-TR', en: 'en-US', ru: 'ru-RU' }
 
 export default function HistoryPanel({ conversations, currentId, lang, t, onOpen, onDelete, onDeleteAll, onClose }: Props) {
-  // Deleting everything cannot be undone, so it takes two taps (works the same
-  // on phone and web, unlike system alert dialogs).
   const [confirming, setConfirming] = useState(false)
 
   return (

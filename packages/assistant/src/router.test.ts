@@ -16,7 +16,6 @@ import {
 const kind = (message: string, history: { role: 'user' | 'assistant'; content: string }[] = []): Intent['kind'] =>
   detectIntent(message, history, 'tr').kind
 
-// Messages taken from real test conversations.
 describe('detectIntent', () => {
   test('small talk', () => {
     assert.equal(kind('merhaba'), 'chat')
@@ -130,7 +129,6 @@ describe('keepVerifiedSentences', () => {
   })
 })
 
-// Fake HTTP for the data tools, so tests never touch the network.
 function http(routes: Record<string, unknown>) {
   return {
     fetchImpl: async (url: string) => {
@@ -249,7 +247,6 @@ describe('answer (correction)', () => {
     assert.ok(calls.some((u) => u.includes('forecast')))
   })
 })
-
 
 describe('factRequest', () => {
   test('finds the property and the name in three languages', () => {

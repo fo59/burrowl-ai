@@ -2,9 +2,6 @@ import type { FactKind } from './facts.ts'
 import type { Lang } from '@burrowl/privacy'
 import { LOCALES } from './text.ts'
 
-// Answers built from exact data need no model: they are instant and cannot be
-// wrong about the numbers.
-
 export function formatNumber(n: number, lang: Lang, maxDigits = 2): string {
   return new Intl.NumberFormat(LOCALES[lang], { maximumFractionDigits: maxDigits }).format(n)
 }

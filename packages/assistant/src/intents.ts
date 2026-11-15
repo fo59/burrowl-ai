@@ -5,8 +5,6 @@ import { B, E, detectLanguage, foldTurkish, stripSuffixes, words } from './text.
 import { needsSearch } from './decide.ts'
 import { evaluateMath, type Calculation } from './math.ts'
 
-// What kind of message this is decides which tool answers it. The router is
-// plain rules: predictable, instant and testable, unlike asking a small model.
 export type Intent =
   | { kind: 'meta' }
   | { kind: 'translate'; text: string | null; target: string }
@@ -23,7 +21,6 @@ export type Intent =
 
 const rx = (parts: string[], flags = 'iu') => new RegExp(`${B}(${parts.join('|')})${E}`, flags)
 
-// "did you use the internet?", "what was sent?" — answered from our own records
 const META = rx([
   'internet\\S* (yararlandin|yararlandi|kullandin|kullandi|ciktin|cikti|baktin|bakti|gonderdin)',
   '(yararlandin|kullandin|ciktin|baktin) mi',
@@ -34,7 +31,6 @@ const META = rx([
 
 const TRANSLATE = rx(['cevir\\S*', 'tercume\\S*', 'translat\\S*', 'перевед\\S*', 'перевод\\S*'])
 
-// target languages people name, folded, mapped to the name the model understands
 const TARGETS: [RegExp, string, Lang | null][] = [
   [rx(['rusca\\S*', 'russian', 'на русский', 'по-русски', 'русск\\S*']), 'Russian', 'ru'],
   [rx(['ingilizce\\S*', 'english', 'на английский', 'английск\\S*']), 'English', 'en'],
@@ -45,7 +41,6 @@ const TARGETS: [RegExp, string, Lang | null][] = [
   [rx(['arapca\\S*', 'arabic', 'на арабский', 'арабск\\S*']), 'Arabic', null],
 ]
 
-// words that belong to the request, not to the text to translate
 const TRANSLATE_FILLER = rx([
   'bu', 'su', 'cumleyi', 'cumle', 'metni', 'metin', 'yaziyi', 'sunu', 'bunu', 'lutfen', 'bana', 'misin', 'mi', 'eder',
   'please', 'this', 'the', 'sentence', 'text', 'into', 'to', 'can', 'you',
@@ -67,27 +62,22 @@ function translateIntent(message: string, uiLang: Lang): { text: string | null; 
   const target = TARGETS.find(([re]) => re.test(folded))?.[1] ?? DEFAULT_TARGET[uiLang]
 
   const quoted = message.match(/["“«']([^"”»']{2,})["”»']/)
-  // "can you translate into Russian if I give you sentences?" asks first; the text comes next
   const onlyAsking = CAN_YOU.test(folded)
   if (quoted) return { text: quoted[1].trim(), target }
   const colon = message.indexOf(':')
   if (colon >= 0 && message.slice(colon + 1).trim()) return { text: message.slice(colon + 1).trim(), target }
   if (onlyAsking) return { text: null, target }
 
-  // "bu cümleyi rusçaya çevir bugün hava soğuk" → text after the verb;
-  // "bugün hava soğuk, bunu rusçaya çevir" → text before it
   const after = message.slice(verb.index + verb[0].length)
   const before = message.slice(0, verb.index)
   const clean = (part: string) => {
     let f = foldTurkish(part)
     for (const [re] of TARGETS) f = f.replace(new RegExp(re.source, 'giu'), ' ')
     f = f.replace(new RegExp(TRANSLATE_FILLER.source, 'giu'), ' ')
-    // keep the original spelling for the words that survive
     const keep = new Set(f.split(/[^\p{L}\p{N}]+/u).filter(Boolean))
     return words(part).filter((w) => keep.has(foldTurkish(w))).join(' ')
   }
   const text = clean(after).split(' ').length >= clean(before).split(' ').length ? clean(after) : clean(before)
-  // "can you translate into Russian?" asks first and gives the text next
   return { text: text.split(' ').filter(Boolean).length >= 2 ? (after.trim() && clean(after) === text ? after.trim().replace(/^[,.:;]\s*/, '') : text) : null, target }
 }
 
@@ -103,7 +93,6 @@ const WEATHER = rx([
   'погод\\S*', 'температур\\S*', 'сколько градусов', 'идёт ли дождь', 'идет ли дождь',
 ])
 
-// words around a place name in a weather question
 const WEATHER_WORDS = new Set([
   'hava', 'durumu', 'nasil', 'kac', 'derece', 'sicak', 'soguk', 'sicaklik', 'bugun', 'simdi', 'suan', 'su', 'an', 'anlik',
   'yarin', 'orada', 'orasi', 'peki', 'acaba', 'yagmur', 'kar', 'yagiyor', 'mi', 'mu', 'ne', 'de', 'da', 'icin', 've',
@@ -112,8 +101,6 @@ const WEATHER_WORDS = new Set([
   'погода', 'погоду', 'погоды', 'в', 'во', 'сейчас', 'сегодня', 'какая', 'какой', 'сколько', 'градусов', 'температура', 'там', 'а',
 ])
 
-// Turkish locative/ablative endings and Russian case endings, so "kazanda",
-// "moskovada" and "в Москве" become a name the geocoder knows.
 function placeForms(word: string): string[] {
   const forms = new Set<string>()
   const w = stripSuffixes(word)
@@ -122,7 +109,6 @@ function placeForms(word: string): string[] {
     if (/и$/u.test(w)) forms.add(w.replace(/и$/u, 'ь'))
     if (/[еуи]$/u.test(w)) forms.add(w.replace(/[еуи]$/u, ''))
   } else {
-    // "kazanda" is kazan+da, not kaza+nda: try the plain endings first
     const plain = w.match(/^(.{3,})(d[ae]|t[ae]|d[ae]n|t[ae]n)$/iu)
     if (plain) forms.add(plain[1])
     const buffered = w.match(/^(.{3,})(nd[ae]|nt[ae]|nd[ae]n)$/iu)
@@ -172,7 +158,6 @@ export function detectIntent(message: string, history: ChatMessage[], uiLang: La
 
   if (META.test(folded)) return { kind: 'meta' }
 
-  // After "can you translate into Russian?" the next message is the text itself.
   const previous = lastUserMessage(history)
   const asked = previous ? translateIntent(previous, uiLang) : null
   if (asked && asked.text === null && !TRANSLATE.test(folded)) return { kind: 'translate', text: message, target: asked.target }
@@ -197,7 +182,6 @@ export function detectIntent(message: string, history: ChatMessage[], uiLang: La
   if (ADVICE.test(folded)) return { kind: 'advice' }
 
   if (previous && CORRECTION.test(folded) && message.split(/\s+/).length <= 12) {
-    // "wrong" points at the last real question, not at an earlier "wrong"
     const lastQuestion = [...history].reverse().find((m) => m.role === 'user' && !CORRECTION.test(foldTurkish(m.content)))
     if (lastQuestion) return { kind: 'correction', previous: lastQuestion.content }
   }

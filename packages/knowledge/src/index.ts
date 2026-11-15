@@ -1,11 +1,8 @@
 export interface Chunk {
   text: string
-  // which page (source) the chunk came from; used for [n] citations
   source: number
 }
 
-// Splits text on paragraph and sentence boundaries into pieces of at most
-// maxChars, so the model only receives a few short, relevant passages.
 export function chunkText(text: string, source: number, maxChars = 600): Chunk[] {
   const chunks: Chunk[] = []
   let current = ''
@@ -26,22 +23,15 @@ export function chunkText(text: string, source: number, maxChars = 600): Chunk[]
   return chunks
 }
 
-// Very common words carry no meaning for matching.
 const STOPWORDS = new Set([
-  // tr
   've', 'ile', 'bir', 'bu', 'şu', 'o', 'da', 'de', 'mi', 'mı', 'mu', 'mü', 'ne', 'için', 'gibi', 'çok', 'daha',
   'olan', 'olarak', 'nedir', 'nasıl', 'kaç', 'hangi', 'hangisi', 'kim', 'kimdir', 'ise', 'en',
-  // en
   'the', 'a', 'an', 'of', 'and', 'or', 'is', 'are', 'was', 'were', 'to', 'in', 'on', 'for', 'with', 'what',
   'who', 'how', 'which', 'it', 'its', 'by', 'as', 'at', 'be', 'that', 'this', 'from',
-  // ru
   'и', 'в', 'на', 'с', 'по', 'не', 'что', 'как', 'это', 'кто', 'какой', 'какая', 'какие', 'для', 'из', 'о',
   'от', 'до', 'ли', 'же', 'а', 'но', 'или', 'у', 'к',
 ])
 
-// Lowercases, splits on anything that is not a letter or digit (any script) and
-// cuts words to their first 5 letters so suffixed forms match (şehri / şehrin,
-// population / populations, столица / столицы).
 export function terms(text: string): string[] {
   return text
     .toLocaleLowerCase()
@@ -50,8 +40,6 @@ export function terms(text: string): string[] {
     .map((w) => (/^\p{N}+$/u.test(w) ? w : w.slice(0, 5)))
 }
 
-// Ranks chunks with BM25, a classic keyword relevance score. It is fast enough
-// to run on a phone in milliseconds, unlike a neural model.
 export function rankChunks(question: string, chunks: Chunk[], k = 5): Chunk[] {
   const q = [...new Set(terms(question))]
   if (q.length === 0 || chunks.length === 0) return chunks.slice(0, k)
